@@ -1,0 +1,16 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - bot-data:/app/data
+      - bot-logs:/app/logs
+
+# Named volumes inherit ownership from the image, so the non-root user can write to them.
+volumes:
+  bot-data:
+  bot-logs:
