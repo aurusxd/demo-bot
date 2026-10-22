@@ -14,6 +14,7 @@ from app.schemas.qualification import LLMReply
 HISTORY_LIMIT = 12
 MAX_USER_TEXT_LEN = 1000
 SLOT_FIELDS = (
+    "name",
     "furniture_type",
     "dimensions",
     "style",
@@ -22,6 +23,8 @@ SLOT_FIELDS = (
     "deadline",
     "phone",
     "comment",
+    "business_role",
+    "lead_sources",
 )
 REQUIRED_SLOTS = ("furniture_type", "dimensions", "phone")
 
@@ -42,7 +45,8 @@ class QualificationService:
         self._messages = messages
 
     async def start(self, user: User, greeting: str) -> None:
-        lead = await self._get_or_create_draft(user)
+        """Fresh dialog for /start: a new draft lead whose history opens with the greeting."""
+        lead = await self._create_draft(user)
         await self._save_message(lead, MessageRole.ASSISTANT, greeting)
         logger.info("qualification started lead_id={}", lead.id)
 
@@ -74,9 +78,11 @@ class QualificationService:
 
     async def _get_or_create_draft(self, user: User) -> Lead:
         lead = await self._leads.get_latest_draft(user.id)
-        if lead is None:
-            lead = await self._leads.add(Lead(user_id=user.id, status=LeadStatus.DRAFT))
-            logger.info("lead created lead_id={} status={}", lead.id, lead.status)
+        return lead if lead is not None else await self._create_draft(user)
+
+    async def _create_draft(self, user: User) -> Lead:
+        lead = await self._leads.add(Lead(user_id=user.id, status=LeadStatus.DRAFT))
+        logger.info("lead created lead_id={} status={}", lead.id, lead.status)
         return lead
 
     async def _ask_llm(self, lead: Lead) -> LLMReply | None:
@@ -125,11 +131,16 @@ class QualificationService:
         )
 
 
+_EMPTY_SLOTS: dict[str, None] = dict.fromkeys(SLOT_FIELDS)
+
+
 def _to_chat_message(message: Message) -> ChatMessage:
     if message.role is MessageRole.ASSISTANT:
-        # Past answers are shown in the same JSON shape the model must return:
-        # with plain-text history DeepSeek's JSON mode often returns empty content.
-        return ChatMessage("assistant", json.dumps({"reply": message.content}, ensure_ascii=False))
+        # Past answers are replayed in the full JSON shape the model must return. With
+        # plain-text history DeepSeek's JSON mode often returns empty content; with a
+        # reply-only shape it starts omitting "slots". Known slot values are sent separately.
+        payload = {"reply": message.content, "slots": _EMPTY_SLOTS, "ready": False}
+        return ChatMessage("assistant", json.dumps(payload, ensure_ascii=False))
     return ChatMessage("user", message.content)
 
 

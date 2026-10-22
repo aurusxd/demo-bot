@@ -8,7 +8,7 @@ from app.core.errors import ExternalServiceError, InvalidInputError
 from app.db.models import FurnitureType, Lead, LeadStatus, Message, MessageRole, User
 from app.db.repositories import LeadRepository, MessageRepository, UserRepository
 from app.prompts.qualification import INVALID_JSON_HINT
-from app.services.qualification import HISTORY_LIMIT, QualificationService
+from app.services.qualification import HISTORY_LIMIT, SLOT_FIELDS, QualificationService
 from tests.fakes import FakeLLMClient, llm_json
 
 
@@ -141,15 +141,35 @@ async def test_prompt_contains_system_slots_and_limited_history(session: AsyncSe
     assert history[-1].content == f"сообщение {turns - 1}"
 
 
-async def test_start_reuses_existing_draft(session: AsyncSession) -> None:
+async def test_start_begins_new_lead_and_dialog_continues_it(session: AsyncSession) -> None:
     user = await make_user(session)
-    service = make_service(session, FakeLLMClient())
+    llm = FakeLLMClient(llm_json("Приятно познакомиться!", name="Влад"))
+    service = make_service(session, llm)
 
-    await service.start(user, "Привет!")
-    await service.start(user, "Привет ещё раз!")
+    await service.start(user, "Как вас зовут?")
+    await service.start(user, "Как вас зовут?")
+    result = await service.handle_message(user, "Влад")
 
-    leads = (await session.scalars(select(Lead))).all()
-    assert len(leads) == 1
+    leads = (await session.scalars(select(Lead).order_by(Lead.id))).all()
+    assert len(leads) == 2
+    assert leads[0].name is None
+    assert leads[1].name == "Влад"
+    assert result.slots == {"name": "Влад"}
+
+
+async def test_b2b_slots_are_stored(session: AsyncSession) -> None:
+    user = await make_user(session)
+    llm = FakeLLMClient(
+        llm_json("Откуда заявки?", business_role="руководитель"),
+        llm_json("Понял!", lead_sources="Авито, сарафан"),
+    )
+    service = make_service(session, llm)
+
+    await service.handle_message(user, "Руководитель")
+    await service.handle_message(user, "С Авито и по сарафану")
+
+    lead = (await session.scalars(select(Lead))).one()
+    assert (lead.business_role, lead.lead_sources) == ("руководитель", "Авито, сарафан")
 
 
 async def test_assistant_history_is_sent_as_json(session: AsyncSession) -> None:
@@ -165,5 +185,9 @@ async def test_assistant_history_is_sent_as_json(session: AsyncSession) -> None:
         ("user", "кухня"),
         ("user", "3 метра"),
     ]
-    assistant = [m for m in history if m.role == "assistant"]
-    assert [json.loads(m.content) for m in assistant] == [{"reply": "Размеры?"}]
+    assistant = [json.loads(m.content) for m in history if m.role == "assistant"]
+    assert len(assistant) == 1
+    assert assistant[0]["reply"] == "Размеры?"
+    assert assistant[0]["ready"] is False
+    assert set(assistant[0]["slots"]) == set(SLOT_FIELDS)
+    assert all(v is None for v in assistant[0]["slots"].values())
