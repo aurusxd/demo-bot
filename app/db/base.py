@@ -40,9 +40,11 @@ def create_engine(database_url: str) -> AsyncEngine:
     if not in_memory and database is not None:
         Path(database).parent.mkdir(parents=True, exist_ok=True)
 
-    engine = (
-        create_async_engine(url, poolclass=StaticPool) if in_memory else create_async_engine(url)
-    )
+    # hide_parameters: SQL errors must not carry user texts/phones into tracebacks and logs.
+    if in_memory:
+        engine = create_async_engine(url, poolclass=StaticPool, hide_parameters=True)
+    else:
+        engine = create_async_engine(url, hide_parameters=True)
     if url.get_backend_name() == "sqlite":
         event.listen(engine.sync_engine, "connect", _enable_sqlite_foreign_keys)
     return engine
