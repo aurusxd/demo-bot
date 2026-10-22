@@ -10,8 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.bot import texts
 from app.bot.middlewares.throttle import ThrottlingMiddleware
-from app.main import build_dispatcher
-from tests.fakes import BOT_TOKEN, FakeLLMClient, llm_json, make_settings, sent_texts, text_update
+from tests.fakes import (
+    BOT_TOKEN,
+    FakeLLMClient,
+    llm_json,
+    make_dispatcher,
+    make_settings,
+    sent_texts,
+    text_update,
+)
 
 
 class FakeClock:
@@ -57,7 +64,7 @@ async def test_flood_is_dropped_before_llm_with_a_single_warning(
 ) -> None:
     llm = FakeLLMClient(llm_json("ответ 1"), llm_json("ответ 2"))
     settings = make_settings(throttle_max_messages=2, throttle_window_s=60)
-    dp = build_dispatcher(settings, session_factory, llm)
+    dp = make_dispatcher(session_factory, llm, settings=settings)
     bot = Bot(token=BOT_TOKEN)
 
     for i in range(1, 6):

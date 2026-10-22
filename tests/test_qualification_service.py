@@ -7,9 +7,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.base import LLMClient
 from app.core.errors import ExternalServiceError, InvalidInputError
-from app.db.models import FurnitureType, Lead, LeadStatus, Message, MessageRole, User
-from app.db.repositories import LeadRepository, MessageRepository, UnitOfWork, UserRepository
-from app.prompts.qualification import INVALID_JSON_HINT
+from app.db.models import (
+    FurnitureType,
+    Lead,
+    LeadMedia,
+    LeadStatus,
+    MediaKind,
+    Message,
+    MessageKind,
+    MessageRole,
+    User,
+)
+from app.db.repositories import (
+    LeadMediaRepository,
+    LeadRepository,
+    MessageRepository,
+    UnitOfWork,
+    UserRepository,
+)
+from app.prompts.qualification import INVALID_JSON_HINT, PHOTO_MARKER, SYSTEM_PROMPT
 from app.services.qualification import (
     HISTORY_LIMIT,
     LLM_TURN_BUDGET_S,
@@ -27,7 +43,12 @@ def make_service(
     session: AsyncSession, llm: LLMClient, llm_budget_s: float = LLM_TURN_BUDGET_S
 ) -> QualificationService:
     return QualificationService(
-        llm, LeadRepository(session), MessageRepository(session), UnitOfWork(session), llm_budget_s
+        llm,
+        LeadRepository(session),
+        MessageRepository(session),
+        LeadMediaRepository(session),
+        UnitOfWork(session),
+        llm_budget_s,
     )
 
 
@@ -247,3 +268,55 @@ async def test_llm_turn_budget_returns_fallback(session: AsyncSession) -> None:
     assert asyncio.get_running_loop().time() - started < 1
     roles = [m.role for m in await get_messages(session)]
     assert roles == [MessageRole.USER]  # the user's message is kept, no assistant reply
+
+
+async def test_voice_transcript_is_stored_as_voice_message(session: AsyncSession) -> None:
+    user = await make_user(session)
+    service = make_service(session, FakeLLMClient(llm_json("Какие размеры?")))
+
+    await service.handle_message(user, "Хочу кухню", MessageKind.VOICE)
+
+    kinds = [(m.role, m.kind) for m in await get_messages(session)]
+    assert kinds == [
+        (MessageRole.USER, MessageKind.VOICE),
+        (MessageRole.ASSISTANT, MessageKind.TEXT),
+    ]
+
+
+async def test_photo_is_attached_to_current_lead_without_llm(session: AsyncSession) -> None:
+    user = await make_user(session)
+    llm = FakeLLMClient(llm_json("Ок"))
+    service = make_service(session, llm)
+    await service.handle_message(user, "Нужен шкаф")
+
+    await service.attach_photo(user, "photo-1", ack="Фото приложил")
+    await service.attach_photo(user, "photo-2", ack=None)
+
+    lead = (await session.scalars(select(Lead))).one()
+    media = (await session.scalars(select(LeadMedia).order_by(LeadMedia.id))).all()
+    assert [(m.lead_id, m.tg_file_id, m.kind) for m in media] == [
+        (lead.id, "photo-1", MediaKind.PHOTO),
+        (lead.id, "photo-2", MediaKind.PHOTO),
+    ]
+    tail = [(m.role, m.content, m.kind) for m in (await get_messages(session))[2:]]
+    assert tail == [
+        (MessageRole.USER, PHOTO_MARKER, MessageKind.PHOTO),
+        (MessageRole.ASSISTANT, "Фото приложил", MessageKind.TEXT),
+        (MessageRole.USER, PHOTO_MARKER, MessageKind.PHOTO),
+    ]
+    assert len(llm.calls) == 1  # photos never go to the LLM
+
+
+async def test_photo_without_dialog_creates_draft_lead(session: AsyncSession) -> None:
+    user = await make_user(session)
+    service = make_service(session, FakeLLMClient())
+
+    await service.attach_photo(user, "photo-1", ack=None)
+
+    lead = (await session.scalars(select(Lead))).one()
+    assert lead.status is LeadStatus.DRAFT
+    assert (await session.scalars(select(LeadMedia))).one().lead_id == lead.id
+
+
+def test_system_prompt_explains_photo_marker() -> None:
+    assert PHOTO_MARKER in SYSTEM_PROMPT

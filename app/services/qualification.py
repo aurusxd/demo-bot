@@ -7,9 +7,23 @@ from pydantic import ValidationError
 
 from app.clients.base import ChatMessage, LLMClient
 from app.core.errors import ExternalServiceError, InvalidInputError
-from app.db.models import Lead, LeadStatus, Message, MessageKind, MessageRole, User
-from app.db.repositories import LeadRepository, MessageRepository, UnitOfWork
-from app.prompts.qualification import CURRENT_SLOTS_TEMPLATE, INVALID_JSON_HINT, SYSTEM_PROMPT
+from app.db.models import (
+    Lead,
+    LeadMedia,
+    LeadStatus,
+    MediaKind,
+    Message,
+    MessageKind,
+    MessageRole,
+    User,
+)
+from app.db.repositories import LeadMediaRepository, LeadRepository, MessageRepository, UnitOfWork
+from app.prompts.qualification import (
+    CURRENT_SLOTS_TEMPLATE,
+    INVALID_JSON_HINT,
+    PHOTO_MARKER,
+    SYSTEM_PROMPT,
+)
 from app.schemas.qualification import LLMReply
 
 HISTORY_LIMIT = 12
@@ -47,12 +61,14 @@ class QualificationService:
         llm: LLMClient,
         leads: LeadRepository,
         messages: MessageRepository,
+        media: LeadMediaRepository,
         uow: UnitOfWork,
         llm_budget_s: float = LLM_TURN_BUDGET_S,
     ) -> None:
         self._llm = llm
         self._leads = leads
         self._messages = messages
+        self._media = media
         self._uow = uow
         self._llm_budget_s = llm_budget_s
 
@@ -62,7 +78,10 @@ class QualificationService:
         await self._save_message(lead, MessageRole.ASSISTANT, greeting)
         logger.info("qualification started lead_id={}", lead.id)
 
-    async def handle_message(self, user: User, text: str) -> TurnResult:
+    async def handle_message(
+        self, user: User, text: str, kind: MessageKind = MessageKind.TEXT
+    ) -> TurnResult:
+        """One dialog turn. `kind` tells where the text came from (typed or voice transcript)."""
         text = text.strip()
         if not text or len(text) > MAX_USER_TEXT_LEN:
             logger.info("qualification input rejected text_len={}", len(text))
@@ -70,7 +89,7 @@ class QualificationService:
 
         lead = await self._get_or_create_lead(user)
         with logger.contextualize(lead_id=lead.id):
-            await self._save_message(lead, MessageRole.USER, text)
+            await self._save_message(lead, MessageRole.USER, text, kind)
             history = await self._messages.get_last(lead.id, HISTORY_LIMIT)
             await self._uow.commit()  # release the SQLite write lock before the slow LLM call
 
@@ -91,6 +110,23 @@ class QualificationService:
                 qualified,
             )
             return TurnResult(reply=reply.reply, qualified=qualified, slots=_lead_slots(lead))
+
+    async def attach_photo(self, user: User, tg_file_id: str, ack: str | None) -> None:
+        """Attach a validated photo to the current lead (no analysis, no LLM call).
+
+        The history gets a marker so the LLM knows a photo was sent, plus the bot's
+        acknowledgement `ack` if one is sent to the user.
+        """
+        lead = await self._get_or_create_lead(user)
+        with logger.contextualize(lead_id=lead.id):
+            await self._media.add(
+                LeadMedia(lead_id=lead.id, tg_file_id=tg_file_id, kind=MediaKind.PHOTO)
+            )
+            await self._save_message(lead, MessageRole.USER, PHOTO_MARKER, MessageKind.PHOTO)
+            if ack is not None:
+                await self._save_message(lead, MessageRole.ASSISTANT, ack)
+            await self._uow.commit()
+            logger.info("photo attached to lead lead_id={}", lead.id)
 
     async def _get_or_create_lead(self, user: User) -> Lead:
         # The dialog continues on the latest lead even after it is qualified, so the bot keeps
@@ -150,10 +186,10 @@ class QualificationService:
         lead.status = status
         await self._leads.save(lead)
 
-    async def _save_message(self, lead: Lead, role: MessageRole, content: str) -> None:
-        await self._messages.add(
-            Message(lead_id=lead.id, role=role, content=content, kind=MessageKind.TEXT)
-        )
+    async def _save_message(
+        self, lead: Lead, role: MessageRole, content: str, kind: MessageKind = MessageKind.TEXT
+    ) -> None:
+        await self._messages.add(Message(lead_id=lead.id, role=role, content=content, kind=kind))
 
 
 _EMPTY_SLOTS: dict[str, None] = dict.fromkeys(SLOT_FIELDS)

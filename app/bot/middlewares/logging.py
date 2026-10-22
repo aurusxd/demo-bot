@@ -57,6 +57,8 @@ def _describe(update: Update) -> str:
         return ""
     if message.text is not None:
         return f"content=text text_len={len(message.text)}"
+    if message.voice is not None:
+        return f"content=voice duration_s={message.voice.duration}"
     return f"content={message.content_type}"
 
 

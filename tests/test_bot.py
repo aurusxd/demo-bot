@@ -15,8 +15,7 @@ from app.core.errors import ExternalServiceError
 from app.db.base import create_engine, create_session_factory
 from app.db.models import Lead, LeadStatus
 from app.db.repositories import UserRepository
-from app.main import build_dispatcher
-from tests.fakes import BOT_TOKEN, FakeLLMClient, llm_json, make_settings, sent_texts, text_update
+from tests.fakes import BOT_TOKEN, FakeLLMClient, llm_json, make_dispatcher, sent_texts, text_update
 
 TELEGRAM_DESCRIPTION_LIMIT = 512
 TELEGRAM_SHORT_DESCRIPTION_LIMIT = 120
@@ -55,15 +54,15 @@ async def test_error_handler_replies_generic_message() -> None:
 
 def test_dispatcher_builds() -> None:
     session_factory = create_session_factory(create_engine("sqlite+aiosqlite://"))
-    dp = build_dispatcher(make_settings(), session_factory, FakeLLMClient())
+    dp = make_dispatcher(session_factory, FakeLLMClient())
 
-    assert [r.name for r in dp.sub_routers] == ["errors", "start", "qualify"]
+    assert [r.name for r in dp.sub_routers] == ["errors", "start", "media", "qualify"]
 
 
 async def test_start_update_flows_through_dispatcher(
     session_factory: async_sessionmaker[AsyncSession], sent: list[TelegramMethod[Any]]
 ) -> None:
-    dp = build_dispatcher(make_settings(), session_factory, FakeLLMClient())
+    dp = make_dispatcher(session_factory, FakeLLMClient())
 
     await dp.feed_update(Bot(token=BOT_TOKEN), text_update(1, "/start"))
 
@@ -81,7 +80,7 @@ async def test_qualification_dialog_through_dispatcher(
         llm_json("Какие размеры кухни?", furniture_type="kitchen"),
         llm_json("Спасибо!", ready=True, dimensions="3 м, угловая", phone="+7 912 345 12 34"),
     )
-    dp = build_dispatcher(make_settings(), session_factory, llm)
+    dp = make_dispatcher(session_factory, llm)
     bot = Bot(token=BOT_TOKEN)
 
     await dp.feed_update(bot, text_update(1, "/start"))
@@ -111,7 +110,7 @@ async def test_llm_failure_answers_fallback(
     session_factory: async_sessionmaker[AsyncSession], sent: list[TelegramMethod[Any]]
 ) -> None:
     llm = FakeLLMClient(ExternalServiceError("deepseek", "timeout"))
-    dp = build_dispatcher(make_settings(), session_factory, llm)
+    dp = make_dispatcher(session_factory, llm)
 
     await dp.feed_update(Bot(token=BOT_TOKEN), text_update(1, "Нужна гардеробная"))
 
@@ -122,7 +121,7 @@ async def test_too_long_text_is_rejected(
     session_factory: async_sessionmaker[AsyncSession], sent: list[TelegramMethod[Any]]
 ) -> None:
     llm = FakeLLMClient()
-    dp = build_dispatcher(make_settings(), session_factory, llm)
+    dp = make_dispatcher(session_factory, llm)
 
     await dp.feed_update(Bot(token=BOT_TOKEN), text_update(1, "a" * 1001))
 

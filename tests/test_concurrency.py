@@ -12,8 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.bot import texts
 from app.db.models import Lead, Message
-from app.main import build_dispatcher
-from tests.fakes import BOT_TOKEN, SlowLLMClient, make_settings, sent_texts, text_update
+from tests.fakes import BOT_TOKEN, SlowLLMClient, make_dispatcher, sent_texts, text_update
 
 LLM_DELAY_S = 1.0
 
@@ -27,7 +26,7 @@ async def timed_feed(dp: Any, bot: Bot, update: Any) -> float:
 async def test_other_users_are_not_blocked_while_llm_thinks(
     file_session_factory: async_sessionmaker[AsyncSession], sent: list[TelegramMethod[Any]]
 ) -> None:
-    dp = build_dispatcher(make_settings(), file_session_factory, SlowLLMClient(LLM_DELAY_S))
+    dp = make_dispatcher(file_session_factory, SlowLLMClient(LLM_DELAY_S))
     bot = Bot(token=BOT_TOKEN)
 
     slow_a, fast_b = await asyncio.gather(
@@ -46,7 +45,7 @@ async def test_one_users_messages_are_processed_in_order(
     file_session_factory: async_sessionmaker[AsyncSession], sent: list[TelegramMethod[Any]]
 ) -> None:
     llm = SlowLLMClient(0.2)
-    dp = build_dispatcher(make_settings(), file_session_factory, llm)
+    dp = make_dispatcher(file_session_factory, llm)
     bot = Bot(token=BOT_TOKEN)
 
     await asyncio.gather(

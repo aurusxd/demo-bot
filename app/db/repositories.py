@@ -3,7 +3,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import Base
-from app.db.models import Lead, Message, User
+from app.db.models import Lead, LeadMedia, Message, User
 
 
 class UnitOfWork:
@@ -68,6 +68,10 @@ class LeadRepository(BaseRepository[Lead]):
         """The user's current dialog: the newest lead in any status."""
         stmt = select(Lead).where(Lead.user_id == user_id).order_by(Lead.id.desc()).limit(1)
         return (await self._session.scalars(stmt)).first()
+
+
+class LeadMediaRepository(BaseRepository[LeadMedia]):
+    model = LeadMedia
 
 
 class MessageRepository(BaseRepository[Message]):
