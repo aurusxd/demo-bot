@@ -1,0 +1,148 @@
+import asyncio
+import time
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Literal, Protocol
+
+import httpx
+from loguru import logger
+
+from app.core.errors import ExternalServiceError
+
+DEFAULT_TIMEOUT_S = 30.0
+DEFAULT_MAX_RETRIES = 2
+DEFAULT_BACKOFF_S = 1.0
+RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+# Multipart file: (filename, content, content_type).
+FileField = tuple[str, bytes, str]
+
+
+@dataclass(frozen=True, slots=True)
+class ChatMessage:
+    role: Literal["system", "user", "assistant"]
+    content: str
+
+
+# Interfaces. Signatures are refined in the slice that implements each client.
+
+
+class LLMClient(Protocol):
+    async def complete_json(self, messages: Sequence[ChatMessage]) -> str:
+        """Return the raw JSON string produced by the model."""
+        ...
+
+
+class ImageGenClient(Protocol):
+    async def edit(self, room_photo: bytes, reference_photo: bytes, prompt: str) -> bytes: ...
+
+
+class SpeechClient(Protocol):
+    async def transcribe(self, audio: bytes, filename: str) -> str: ...
+
+
+class CrmClient(Protocol):
+    async def send(self, lead: Mapping[str, object]) -> None: ...
+
+
+class HttpClient:
+    """Shared async HTTP client: timeouts, retries with backoff, one log line per attempt."""
+
+    def __init__(
+        self,
+        service: str,
+        base_url: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        timeout_s: float = DEFAULT_TIMEOUT_S,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        backoff_s: float = DEFAULT_BACKOFF_S,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        self._service = service
+        self._max_retries = max_retries
+        self._backoff_s = backoff_s
+        self._client = httpx.AsyncClient(
+            base_url=base_url,
+            headers=dict(headers or {}),
+            timeout=timeout_s,
+            transport=transport,
+        )
+
+    async def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: object | None = None,
+        data: Mapping[str, str] | None = None,
+        files: Mapping[str, FileField] | None = None,
+        timeout_s: float | None = None,
+    ) -> httpx.Response:
+        attempts = self._max_retries + 1
+        timeout = timeout_s if timeout_s is not None else httpx.USE_CLIENT_DEFAULT
+        for attempt in range(1, attempts + 1):
+            started = time.perf_counter()
+            try:
+                response = await self._client.request(
+                    method, path, json=json, data=data, files=files, timeout=timeout
+                )
+            except httpx.TransportError as exc:
+                self._log_failure(method, path, attempt, started, type(exc).__name__)
+                if attempt == attempts:
+                    raise ExternalServiceError(self._service, type(exc).__name__) from exc
+                await self._sleep_before_retry(attempt)
+                continue
+
+            self._log_response(method, path, attempt, started, response)
+            if response.status_code in RETRYABLE_STATUSES and attempt < attempts:
+                await self._sleep_before_retry(attempt)
+                continue
+            if response.is_error:
+                raise ExternalServiceError(
+                    self._service, f"HTTP {response.status_code}", response.status_code
+                )
+            return response
+
+        raise AssertionError("unreachable")  # loop always returns or raises
+
+    async def close(self) -> None:
+        await self._client.aclose()
+
+    async def _sleep_before_retry(self, attempt: int) -> None:
+        delay = self._backoff_s * attempt
+        logger.warning("http retry service={} attempt={} delay_s={}", self._service, attempt, delay)
+        await asyncio.sleep(delay)
+
+    def _log_response(
+        self, method: str, path: str, attempt: int, started: float, response: httpx.Response
+    ) -> None:
+        logger.info(
+            "http call service={} {} {} status={} latency_ms={} attempt={} "
+            "req_bytes={} resp_bytes={}",
+            self._service,
+            method,
+            path,
+            response.status_code,
+            _elapsed_ms(started),
+            attempt,
+            response.request.headers.get("content-length", "0"),
+            len(response.content),
+        )
+
+    def _log_failure(
+        self, method: str, path: str, attempt: int, started: float, error: str
+    ) -> None:
+        logger.warning(
+            "http call service={} {} {} failed error={} latency_ms={} attempt={}",
+            self._service,
+            method,
+            path,
+            error,
+            _elapsed_ms(started),
+            attempt,
+        )
+
+
+def _elapsed_ms(started: float) -> int:
+    return round((time.perf_counter() - started) * 1000)
