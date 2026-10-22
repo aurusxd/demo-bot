@@ -54,6 +54,7 @@ class LeadSlotsPatch(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
+    name: ShortSlot = None
     furniture_type: Annotated[FurnitureType | None, BeforeValidator(_furniture_type)] = None
     dimensions: LongSlot = None
     style: ShortSlot = None
@@ -62,6 +63,8 @@ class LeadSlotsPatch(BaseModel):
     deadline: ShortSlot = None
     phone: Annotated[str | None, BeforeValidator(normalize_phone)] = None
     comment: LongSlot = None
+    business_role: ShortSlot = None
+    lead_sources: ShortSlot = None
 
     def filled(self) -> dict[str, str]:
         return {k: str(v) for k, v in self.model_dump(exclude_none=True).items()}

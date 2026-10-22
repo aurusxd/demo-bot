@@ -80,6 +80,7 @@ class Lead(Base):
     status: Mapped[LeadStatus] = mapped_column(
         _str_enum(LeadStatus), default=LeadStatus.DRAFT, server_default=LeadStatus.DRAFT.value
     )
+    name: Mapped[str | None] = mapped_column(String(128))
     furniture_type: Mapped[FurnitureType | None] = mapped_column(_str_enum(FurnitureType))
     dimensions: Mapped[str | None] = mapped_column(Text)
     style: Mapped[str | None] = mapped_column(String(128))
@@ -88,6 +89,9 @@ class Lead(Base):
     deadline: Mapped[str | None] = mapped_column(String(128))
     phone: Mapped[str | None] = mapped_column(String(32))
     comment: Mapped[str | None] = mapped_column(Text)
+    # About the demo visitor as a furniture business (B2B), not about the order.
+    business_role: Mapped[str | None] = mapped_column(String(128))
+    lead_sources: Mapped[str | None] = mapped_column(String(255))
     estimate_min: Mapped[int | None] = mapped_column(Integer)
     estimate_max: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = _created_at()
