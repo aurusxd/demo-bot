@@ -8,7 +8,8 @@ from app.core.errors import ExternalServiceError
 
 SERVICE = "deepseek"
 CHAT_PATH = "/chat/completions"
-TIMEOUT_S = 60.0
+TIMEOUT_S = 30.0
+MAX_RETRIES = 1  # one HTTP retry; the service caps the whole turn anyway
 TEMPERATURE = 0.3
 MAX_TOKENS = 800
 
@@ -39,6 +40,7 @@ class DeepSeekClient:
             base_url,
             headers={"Authorization": f"Bearer {api_key}"},
             timeout_s=TIMEOUT_S,
+            max_retries=MAX_RETRIES,
         )
         return cls(http, model)
 
