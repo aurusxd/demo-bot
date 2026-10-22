@@ -5,7 +5,12 @@ from app.config import Settings
 
 
 def make_settings(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
-    env = {"DEEPSEEK_API_KEY": "sk-test-key", **env}
+    env = {
+        "DEEPSEEK_API_KEY": "sk-test-key",
+        "POLZA_API_KEY": "pk-test-key",
+        "POLZA_STT_MODEL": "openai/whisper-1",
+        **env,
+    }
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     return Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
@@ -24,12 +29,25 @@ def test_deepseek_key_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
         Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
 
 
+@pytest.mark.parametrize("missing", ["POLZA_API_KEY", "POLZA_STT_MODEL"])
+def test_polza_stt_settings_are_required(monkeypatch: pytest.MonkeyPatch, missing: str) -> None:
+    monkeypatch.setenv("BOT_TOKEN", "123:abc")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deep")
+    monkeypatch.setenv("POLZA_API_KEY", "pk")
+    monkeypatch.setenv("POLZA_STT_MODEL", "openai/whisper-1")
+    monkeypatch.delenv(missing)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+
+
 def test_defaults_and_admin_ids_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = make_settings(monkeypatch, BOT_TOKEN="123:abc", ADMIN_IDS="1, 2,3")
 
     assert settings.admin_ids == [1, 2, 3]
     assert settings.tryon_daily_limit == 5
     assert settings.database_url.startswith("sqlite+aiosqlite")
+    assert settings.polza_base_url == "https://polza.ai/api/v1"
+    assert settings.polza_stt_provider is None
 
 
 def test_empty_values_fall_back_to_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -45,7 +63,9 @@ def test_invalid_number_fails(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_secret_values_are_collected(monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = make_settings(monkeypatch, BOT_TOKEN="123:abc", DEEPSEEK_API_KEY="sk-deep")
+    settings = make_settings(
+        monkeypatch, BOT_TOKEN="123:abc", DEEPSEEK_API_KEY="sk-deep", POLZA_API_KEY="pk-polza"
+    )
 
-    assert settings.secret_values() == ["123:abc", "sk-deep"]
+    assert settings.secret_values() == ["123:abc", "sk-deep", "pk-polza"]
     assert "sk-deep" not in repr(settings)

@@ -13,3 +13,15 @@ class ExternalServiceError(AppError):
 
 class InvalidInputError(AppError):
     """User input failed validation (too long, empty, wrong type)."""
+
+
+class MediaTooLargeError(InvalidInputError):
+    """Voice is too long or a file exceeds the size limit."""
+
+
+class InvalidImageError(InvalidInputError):
+    """The photo cannot be opened as an allowed image format."""
+
+
+class EmptyTranscriptionError(InvalidInputError):
+    """Speech recognition returned no text (silence, noise)."""

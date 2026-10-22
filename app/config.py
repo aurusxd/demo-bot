@@ -23,10 +23,11 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-chat"
 
-    polza_api_key: SecretStr | None = None
-    polza_base_url: str | None = None
+    polza_api_key: SecretStr
+    polza_base_url: str = "https://polza.ai/api/v1"
     polza_image_model: str | None = None
-    polza_stt_model: str | None = None
+    polza_stt_model: str
+    polza_stt_provider: str | None = None  # Polza routing: provider.only = [this]
 
     crm_webhook_url: str | None = None
     database_url: str = "sqlite+aiosqlite:///data/app.db"
@@ -45,7 +46,7 @@ class Settings(BaseSettings):
     def secret_values(self) -> list[str]:
         """Raw secret values, used by logging to mask them in every sink."""
         secrets = (self.bot_token, self.deepseek_api_key, self.polza_api_key)
-        return [s.get_secret_value() for s in secrets if s is not None]
+        return [s.get_secret_value() for s in secrets]
 
 
 @lru_cache

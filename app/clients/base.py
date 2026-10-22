@@ -38,7 +38,15 @@ class ImageGenClient(Protocol):
 
 
 class SpeechClient(Protocol):
-    async def transcribe(self, audio: bytes, filename: str) -> str: ...
+    async def transcribe(self, audio: bytes, mime_type: str) -> str:
+        """Return the recognized text (may be empty for silence)."""
+        ...
+
+
+class FileDownloader(Protocol):
+    async def download(self, file_id: str) -> bytes:
+        """Download a Telegram file into memory (never to disk)."""
+        ...
 
 
 class CrmClient(Protocol):
