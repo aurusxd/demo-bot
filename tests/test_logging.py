@@ -3,9 +3,12 @@ import logging
 from pathlib import Path
 
 import pytest
+from aiogram.types import Update
 from loguru import logger
 
+from app.bot.middlewares.logging import _describe  # pyright: ignore[reportPrivateUsage]
 from app.logging_setup import Sanitizer, mask_phone, setup_logging
+from tests.fakes import photo_update, text_update, voice_update
 
 SECRET = "sk-super-secret-key-123"
 BOT_TOKEN = "1234567890:AAH" + "x" * 32
@@ -58,3 +61,17 @@ def test_setup_logging_writes_sanitized_json(tmp_path: Path) -> None:
     assert "stdlib phone +7***1234" in messages
     assert all(SECRET not in m for m in messages)
     assert any(r["extra"].get("tg_id") == 42 for r in records)
+
+
+@pytest.mark.parametrize(
+    ("update", "expected"),
+    [
+        (text_update(1, "Хочу кухню"), "content=text text_len=10"),
+        (voice_update(1, "v1", duration=7), "content=voice duration_s=7"),
+        (photo_update(1, "p1"), "content=photo"),
+    ],
+)
+def test_update_description_has_no_text_and_plain_content_type(
+    update: Update, expected: str
+) -> None:
+    assert _describe(update) == expected

@@ -5,6 +5,7 @@ from typing import Any
 from aiogram import BaseMiddleware
 from aiogram.dispatcher.event.bases import UNHANDLED
 from aiogram.dispatcher.event.handler import HandlerObject
+from aiogram.enums import ContentType
 from aiogram.types import TelegramObject, Update, User
 from loguru import logger
 
@@ -59,7 +60,11 @@ def _describe(update: Update) -> str:
         return f"content=text text_len={len(message.text)}"
     if message.voice is not None:
         return f"content=voice duration_s={message.voice.duration}"
-    return f"content={message.content_type}"
+    # aiogram returns a ContentType enum typed as str: log "photo", not "ContentType.PHOTO".
+    content_type = message.content_type
+    if isinstance(content_type, ContentType):
+        content_type = content_type.value
+    return f"content={content_type}"
 
 
 def _elapsed_ms(started: float) -> int:
