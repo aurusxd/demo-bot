@@ -34,6 +34,8 @@ SLOT_FIELDS = (
     "name",
     "furniture_type",
     "dimensions",
+    "length_m",
+    "price_class",
     "style",
     "budget",
     "city",
@@ -49,6 +51,7 @@ REQUIRED_SLOTS = ("furniture_type", "dimensions", "phone")
 @dataclass(frozen=True, slots=True)
 class TurnResult:
     reply: str | None  # None -> LLM failed, the bot answers with a fallback text
+    lead_id: int | None = None
     qualified: bool = False  # True only on the turn the lead became qualified
     slots: dict[str, str] = field(default_factory=dict[str, str])
 
@@ -95,7 +98,7 @@ class QualificationService:
 
             reply = await self._ask_llm(lead, history)
             if reply is None:
-                return TurnResult(reply=None, slots=_lead_slots(lead))
+                return TurnResult(reply=None, lead_id=lead.id, slots=_lead_slots(lead))
 
             updated = await self._apply_slots(lead, reply)
             await self._save_message(lead, MessageRole.ASSISTANT, reply.reply)
@@ -109,7 +112,9 @@ class QualificationService:
                 reply.ready,
                 qualified,
             )
-            return TurnResult(reply=reply.reply, qualified=qualified, slots=_lead_slots(lead))
+            return TurnResult(
+                reply=reply.reply, lead_id=lead.id, qualified=qualified, slots=_lead_slots(lead)
+            )
 
     async def attach_photo(self, user: User, tg_file_id: str, ack: str | None) -> None:
         """Attach a validated photo to the current lead (no analysis, no LLM call).

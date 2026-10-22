@@ -9,6 +9,7 @@ from app.bot import texts
 from app.bot.handlers.qualify import run_dialog_turn
 from app.core.errors import EmptyTranscriptionError, ExternalServiceError, InvalidInputError
 from app.db.models import MessageKind, User
+from app.services.leads import LeadService
 from app.services.media import MediaService, PhotoInput, VoiceInput
 from app.services.qualification import QualificationService
 
@@ -38,7 +39,11 @@ class MediaGroupTracker:
 
 
 async def voice_message(
-    message: Message, user: User, media: MediaService, qualification: QualificationService
+    message: Message,
+    user: User,
+    media: MediaService,
+    qualification: QualificationService,
+    leads: LeadService,
 ) -> None:
     voice = message.voice
     bot = message.bot
@@ -59,7 +64,13 @@ async def voice_message(
         return
 
     await run_dialog_turn(
-        message, user, qualification, text, MessageKind.VOICE, too_long_text=texts.VOICE_TOO_LONG
+        message,
+        user,
+        qualification,
+        leads,
+        text,
+        MessageKind.VOICE,
+        too_long_text=texts.VOICE_TOO_LONG,
     )
 
 
@@ -68,6 +79,7 @@ async def photo_message(
     user: User,
     media: MediaService,
     qualification: QualificationService,
+    leads: LeadService,
     media_groups: MediaGroupTracker,
 ) -> None:
     assert message.photo  # guaranteed by the F.photo filter
@@ -87,7 +99,7 @@ async def photo_message(
     ack = texts.PHOTO_RECEIVED if not caption and first_in_album else None
     await qualification.attach_photo(user, photo.file_id, ack)
     if caption:
-        await run_dialog_turn(message, user, qualification, caption)
+        await run_dialog_turn(message, user, qualification, leads, caption)
     elif ack is not None:
         await message.answer(ack)
 

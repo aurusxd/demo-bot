@@ -15,7 +15,16 @@ from app.core.errors import ExternalServiceError
 from app.db.base import create_engine, create_session_factory
 from app.db.models import Lead, LeadStatus
 from app.db.repositories import UserRepository
-from tests.fakes import BOT_TOKEN, FakeLLMClient, llm_json, make_dispatcher, sent_texts, text_update
+from tests.fakes import (
+    BOT_TOKEN,
+    FakeCrmClient,
+    FakeLLMClient,
+    FakeNotifier,
+    llm_json,
+    make_dispatcher,
+    sent_texts,
+    text_update,
+)
 
 TELEGRAM_DESCRIPTION_LIMIT = 512
 TELEGRAM_SHORT_DESCRIPTION_LIMIT = 120
@@ -78,32 +87,47 @@ async def test_qualification_dialog_through_dispatcher(
     llm = FakeLLMClient(
         llm_json("Приятно познакомиться, Анна! Что хотите заказать?", name="Анна"),
         llm_json("Какие размеры кухни?", furniture_type="kitchen"),
-        llm_json("Спасибо!", ready=True, dimensions="3 м, угловая", phone="+7 912 345 12 34"),
+        llm_json(
+            "Спасибо!",
+            ready=True,
+            dimensions="3 м, прямая",
+            length_m=3,
+            phone="+7 912 345 12 34",
+        ),
     )
-    dp = make_dispatcher(session_factory, llm)
+    crm, notifier = FakeCrmClient(), FakeNotifier()
+    dp = make_dispatcher(session_factory, llm, crm=crm, notifier=notifier)
     bot = Bot(token=BOT_TOKEN)
 
     await dp.feed_update(bot, text_update(1, "/start"))
     await dp.feed_update(bot, text_update(2, "Анна"))
     await dp.feed_update(bot, text_update(3, "Хочу кухню <b>"))
-    await dp.feed_update(bot, text_update(4, "3 метра угловая, 89123451234"))
+    await dp.feed_update(bot, text_update(4, "3 метра прямая, 89123451234"))
 
     replies = sent_texts(sent)
-    assert replies[:4] == [
+    estimate = texts.ESTIMATE_RANGE.format(
+        min_price=texts.format_price(115000, "₽"), max_price=texts.format_price(155000, "₽")
+    )
+    # No robotic summary: the LLM recaps itself, then only the estimate follows.
+    assert replies == [
         texts.GREETING,
         "Приятно познакомиться, Анна! Что хотите заказать?",
         "Какие размеры кухни?",
         "Спасибо!",
+        estimate,
     ]
-    assert len(replies) == 4  # no extra summary message: the LLM recaps itself
     llm_replies = [m for m in sent if isinstance(m, SendMessage) and m.text != texts.GREETING]
-    assert all(m.parse_mode is None for m in llm_replies)
+    assert all(m.parse_mode is None for m in llm_replies[:-1])
     assert all(m.reply_markup is None for m in llm_replies)  # no buttons in the dialog
     # The greeting is part of the history sent to the LLM.
     assert json.loads(llm.calls[0][2].content)["reply"] == texts.GREETING
+    assert [lead.phone for lead in crm.sent] == ["+79123451234"]
+    assert len(notifier.cards) == 1
     async with session_factory() as session:
         lead = (await session.scalars(select(Lead))).one()
-        assert lead.status is LeadStatus.QUALIFIED
+        assert lead.status is LeadStatus.SENT
+        assert (lead.estimate_min, lead.estimate_max) == (115000, 155000)
+        assert lead.sent_at is not None
 
 
 async def test_llm_failure_answers_fallback(

@@ -57,6 +57,61 @@ SEND_AS_PHOTO = (
     "🖼 Пришлите, пожалуйста, картинку как фото, а не файлом — так я приложу её к заявке."
 )
 
+# --- Estimate for the client (sent after the LLM's thank-you on qualification) ---
+
+ESTIMATE_RANGE = (
+    "💰 Предварительный расчёт: {min_price} – {max_price}.\n"
+    "Это ориентир: точную стоимость назовёт менеджер после замера."
+)
+
+ESTIMATE_AFTER_MEASURE = (
+    "📏 Точную стоимость менеджер посчитает после замера — он скоро с вами свяжется."
+)
+
+
+def format_price(value: int, currency: str) -> str:
+    """115000 -> '115 000 ₽' (narrow no-break space keeps the number on one line)."""
+    return f"{value:,}".replace(",", " ") + f" {currency}"
+
+
+# --- Lead card for managers (HTML; every value is escaped by the renderer) ---
+
+LEAD_CARD_TITLE = "🔥 <b>Новая заявка #{lead_id}</b>"
+LEAD_CARD_ESTIMATE = "💰 <b>Предварительно:</b> {min_price} – {max_price}"
+LEAD_CARD_NO_ESTIMATE = "💰 <b>Расчёт:</b> после замера"
+LEAD_CARD_CONTACT = "✈️ <b>Telegram:</b> {contact}"
+LEAD_CARD_PHOTOS = "📎 <b>Фото:</b> {count} (ниже)"
+LEAD_CARD_FIELD = "<b>{label}:</b> {value}"
+LEAD_CARD_B2B_TITLE = "\n🏢 <i>О посетителе демо</i>"
+
+# Order and labels of the card fields.
+LEAD_CARD_FIELDS = (
+    ("name", "Имя"),
+    ("phone", "Телефон"),
+    ("furniture_type", "Что нужно"),
+    ("dimensions", "Размеры"),
+    ("length_m", "Погонных метров"),
+    ("price_class", "Класс материалов"),
+    ("style", "Стиль"),
+    ("budget", "Бюджет"),
+    ("city", "Город"),
+    ("deadline", "Сроки"),
+    ("comment", "Комментарий"),
+)
+LEAD_CARD_B2B_FIELDS = (
+    ("business_role", "Роль в бизнесе"),
+    ("lead_sources", "Откуда заявки"),
+)
+
+VALUE_LABELS = {
+    "kitchen": "Кухня",
+    "wardrobe": "Шкаф",
+    "walk_in": "Гардеробная",
+    "economy": "Эконом",
+    "standard": "Стандарт",
+    "premium": "Премиум",
+}
+
 THROTTLED = "Вы пишете очень быстро 🙂 Дайте мне минутку — и продолжим."
 
 # --- Errors ---

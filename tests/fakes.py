@@ -3,6 +3,7 @@ import io
 import json
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from aiogram import Dispatcher
@@ -12,10 +13,19 @@ from aiogram.types import User as TgUser
 from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.clients.base import ChatMessage, FileDownloader, LLMClient, SpeechClient
+from app.clients.base import (
+    ChatMessage,
+    CrmClient,
+    FileDownloader,
+    LeadNotifier,
+    LLMClient,
+    SpeechClient,
+)
 from app.config import Settings
 from app.core.errors import ExternalServiceError
 from app.main import build_dispatcher
+from app.schemas.lead import LeadPayload
+from app.services.estimate import EstimateService, load_pricing
 
 BOT_TOKEN = "123456:" + "A" * 35
 
@@ -27,6 +37,7 @@ def make_settings(**overrides: Any) -> Settings:
         deepseek_api_key="k",
         polza_api_key="pk",
         polza_stt_model="openai/whisper-1",
+        admin_chat_id=777,
         **overrides,
     )
 
@@ -38,6 +49,8 @@ def make_dispatcher(
     settings: Settings | None = None,
     speech: SpeechClient | None = None,
     downloader: FileDownloader | None = None,
+    crm: CrmClient | None = None,
+    notifier: LeadNotifier | None = None,
 ) -> Dispatcher:
     return build_dispatcher(
         settings or make_settings(),
@@ -45,6 +58,9 @@ def make_dispatcher(
         llm,
         speech or FakeSpeechClient(),
         downloader or FakeDownloader(),
+        EstimateService(load_pricing(Path("config/pricing.yaml"))),
+        crm or FakeCrmClient(),
+        notifier or FakeNotifier(),
     )
 
 
@@ -141,6 +157,35 @@ class FakeDownloader:
         if file_id not in self.files:
             raise ExternalServiceError("telegram", "download failed")
         return self.files[file_id]
+
+
+class FakeCrmClient:
+    """CrmClient that records sent leads or raises a scripted error."""
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self._error = error
+        self.sent: list[LeadPayload] = []
+
+    async def send(self, lead: LeadPayload) -> None:
+        if self._error is not None:
+            raise self._error
+        self.sent.append(lead)
+
+    async def close(self) -> None:
+        return None
+
+
+class FakeNotifier:
+    """LeadNotifier that records cards or raises a scripted error."""
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self._error = error
+        self.cards: list[tuple[str, list[str]]] = []
+
+    async def notify(self, card_html: str, photo_file_ids: Sequence[str]) -> None:
+        if self._error is not None:
+            raise self._error
+        self.cards.append((card_html, list(photo_file_ids)))
 
 
 def image_bytes(image_format: str = "JPEG", size: tuple[int, int] = (8, 8)) -> bytes:

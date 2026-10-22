@@ -8,6 +8,7 @@ import httpx
 from loguru import logger
 
 from app.core.errors import ExternalServiceError
+from app.schemas.lead import LeadPayload
 
 DEFAULT_TIMEOUT_S = 30.0
 DEFAULT_MAX_RETRIES = 2
@@ -50,7 +51,15 @@ class FileDownloader(Protocol):
 
 
 class CrmClient(Protocol):
-    async def send(self, lead: Mapping[str, object]) -> None: ...
+    async def send(self, lead: LeadPayload) -> None:
+        """Deliver a qualified lead; raise ExternalServiceError on failure."""
+        ...
+
+
+class LeadNotifier(Protocol):
+    async def notify(self, card_html: str, photo_file_ids: Sequence[str]) -> None:
+        """Send the lead card (and its photos) to the managers' chat."""
+        ...
 
 
 class HttpClient:

@@ -3,7 +3,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import Base
-from app.db.models import Lead, LeadMedia, Message, User
+from app.db.models import Lead, LeadMedia, MediaKind, Message, User
 
 
 class UnitOfWork:
@@ -72,6 +72,15 @@ class LeadRepository(BaseRepository[Lead]):
 
 class LeadMediaRepository(BaseRepository[LeadMedia]):
     model = LeadMedia
+
+    async def list_file_ids(self, lead_id: int, kind: MediaKind) -> list[str]:
+        """Telegram file ids of a lead's media in the order they were sent."""
+        stmt = (
+            select(LeadMedia.tg_file_id)
+            .where(LeadMedia.lead_id == lead_id, LeadMedia.kind == kind)
+            .order_by(LeadMedia.id)
+        )
+        return list((await self._session.scalars(stmt)).all())
 
 
 class MessageRepository(BaseRepository[Message]):
