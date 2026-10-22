@@ -86,6 +86,7 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 │   │   ├── base.py              # Protocol'ы + базовый HttpClient (ретраи, таймауты, логи)
 │   │   ├── deepseek.py
 │   │   ├── polza.py             # image-gen, speech-to-text
+│   │   ├── telegram.py          # скачивание файлов из Telegram в память (FileDownloader)
 │   │   └── crm.py               # LogCrmClient (демо), WebhookCrmClient
 │   ├── db/
 │   │   ├── base.py              # Base, engine, session factory
@@ -172,8 +173,8 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 - Если размеров недостаточно — расчёт не делаем, спрашиваем.
 
 ### 5.4 Фото и голос
-- **Голос:** скачать `.ogg` → транскрипция через Polza (STT-модель из `.env`) → текст идёт в тот же пайплайн квалификации.
-- **Фото:** без анализа. Валидация (размер, тип, Pillow open), strip EXIF; в квалификации фото просто сохраняется как `tg_file_id` в `lead_media` и пересылается менеджеру вместе с карточкой лида. Для примерки (§5.7) фото дополнительно ресайзится ≤ 1536 px.
+- **Голос:** длительность ≤ 60 с проверяется до скачивания → `.ogg` скачивается в память → транскрипция через Polza `POST /v1/audio/transcriptions` (JSON, `file` = base64 data-URL, `language=ru`, модель `POLZA_STT_MODEL`, провайдер `POLZA_STT_PROVIDER` → `provider.only`; таймаут 30 с, 1 ретрай) → текст идёт в тот же пайплайн квалификации (`messages.kind = voice`). Пустая расшифровка → просьба повторить; ошибка STT → просьба написать текстом.
+- **Фото:** без анализа. Принимаем только сжатое фото (Telegram сам перекодирует его и убирает EXIF); картинку, присланную файлом, просим отправить как фото. Валидация: ≤ 10 МБ, скачивание в память, Pillow `verify` в `asyncio.to_thread`, формат `JPEG/PNG/WEBP`; байты сразу выбрасываются. В лид сохраняется `tg_file_id` (`lead_media`), в историю — маркер «[Клиент прислал фото]» (LLM знает, что фото есть, но его не видит). Без подписи — короткое подтверждение без вызова LLM (альбом — одно подтверждение); подпись — обычный ход диалога. Менеджеру фото пересылается вместе с карточкой лида (слайс 4). Для примерки (§5.7) фото дополнительно ресайзится ≤ 1536 px.
 
 ### 5.5 Передача лида
 - Сервис `LeadService.submit(lead)` → `CrmClient.send(lead)` + карточка в чат менеджера (`ADMIN_CHAT_ID`) с слотами, вилкой цены и фото.
@@ -239,9 +240,10 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-chat
 
 POLZA_API_KEY=
-POLZA_BASE_URL=
-POLZA_IMAGE_MODEL=        # Nano Banana, точный id взять в доке Polza
-POLZA_STT_MODEL=
+POLZA_BASE_URL=https://polza.ai/api/v1
+POLZA_IMAGE_MODEL=        # Nano Banana: google/gemini-3.1-flash-lite-image
+POLZA_STT_MODEL=openai/whisper-1
+POLZA_STT_PROVIDER=openai # необязательно: provider.only для STT
 
 CRM_WEBHOOK_URL=          # пусто → LogCrmClient
 DATABASE_URL=sqlite+aiosqlite:///data/app.db
@@ -253,8 +255,8 @@ LOG_LEVEL=INFO
 
 ## 9. Открытые вопросы / риски
 
-1. **DeepSeek не умеет аудио** → STT идём через Polza (модель в `.env`). Проверить в доке Polza доступные модели и формат запроса.
-2. **Точные эндпоинт и формат Polza для Nano Banana** (edit с несколькими входными картинками, base64 vs URL) — уточнить в доке на Стадии 0 и зафиксировать в `clients/polza.py`. Клиент прячется за `ImageGenClient`, так что смена формата не затронет остальной код.
+1. ~~**DeepSeek не умеет аудио**~~ → решено (слайс 3): STT через Polza `POST /v1/audio/transcriptions`, модель `openai/whisper-1`, провайдер `openai`. Через Media API (`/v1/media`) STT не работает — по доке вернёт `RESULT_EXPIRED`.
+2. **Nano Banana через Polza** — известно: `POST https://polza.ai/api/v1/media`, модель `google/gemini-3.1-flash-lite-image`, провайдер `mie` (`provider.only`); ответ может быть `pending` → опрос `GET /v1/media/{id}`. Формат `input.images` (base64 vs URL) уточнить в слайсе 6 и зафиксировать в `clients/polza.py`. Клиент прячется за `ImageGenClient`, так что смена формата не затронет остальной код.
 3. **Качество примерки** зависит от промпта и референса — заложить время на итерации промпта (в `texts.py`/`prompts/`, не в коде).
 4. **Авторские права на фото каталога** — для демо ок, для клиентского показа заменить.
 5. SQLite + async: один процесс бота, этого достаточно; при росте — смена `DATABASE_URL` на Postgres без переписывания (SQLAlchemy).
