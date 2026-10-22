@@ -1,5 +1,7 @@
 # All user-facing bot texts live here.
 
+from collections.abc import Mapping
+
 # --- Bot profile (shown before /start). Limits: description <= 512, short <= 120. ---
 
 BOT_DESCRIPTION = (
@@ -34,6 +36,57 @@ START = (
 MENU_PLACEHOLDER = "Выберите действие"
 
 COMING_SOON = "🛠 Этот раздел скоро заработает. Пока можно посмотреть другие пункты меню."
+
+# --- Qualification ---
+
+QUALIFY_START = (
+    "Отлично, давайте оформим заявку 📝\n\n"
+    "Что хотите заказать — кухню, шкаф или гардеробную? "
+    "Если знаете размеры, напишите их сразу. Можно отвечать голосом — скоро научусь 🙂"
+)
+
+QUALIFY_FALLBACK = (
+    "Извините, не совсем понял. Уточните, пожалуйста: "
+    "что вы хотите заказать и какие примерно размеры?"
+)
+
+TEXT_TOO_LONG = "✂️ Сообщение получилось слишком длинным. Сократите, пожалуйста, до 1000 символов."
+
+LEAD_QUALIFIED = (
+    "✅ Заявка собрана:\n\n{summary}\n\n"
+    "Менеджер свяжется с вами в ближайшее время. "
+    "Предварительный расчёт стоимости скоро будет приходить прямо сюда."
+)
+
+SLOT_LABELS = {
+    "furniture_type": "Мебель",
+    "dimensions": "Размеры",
+    "style": "Стиль",
+    "budget": "Бюджет",
+    "city": "Город",
+    "deadline": "Сроки",
+    "phone": "Телефон",
+    "comment": "Комментарий",
+}
+
+FURNITURE_LABELS = {
+    "kitchen": "кухня",
+    "wardrobe": "шкаф",
+    "walk_in": "гардеробная",
+}
+
+
+def lead_summary(slots: Mapping[str, str]) -> str:
+    lines: list[str] = []
+    for name, label in SLOT_LABELS.items():
+        value = slots.get(name)
+        if value is None:
+            continue
+        if name == "furniture_type":
+            value = FURNITURE_LABELS.get(value, value)
+        lines.append(f"• {label}: {value}")
+    return "\n".join(lines)
+
 
 # --- Errors ---
 

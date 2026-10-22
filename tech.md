@@ -70,7 +70,7 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 │   ├── logging_setup.py         # loguru: sinks, маскирование секретов
 │   ├── bot/
 │   │   ├── handlers/            # start.py, qualify.py, catalog.py, tryon.py, media.py
-│   │   ├── middlewares/         # logging.py, throttle.py, db_session.py, user.py
+│   │   ├── middlewares/         # logging.py, throttle.py, db_session.py, user.py, services.py (сборка сервисов на апдейт)
 │   │   ├── keyboards.py
 │   │   ├── states.py            # aiogram FSM states
 │   │   └── texts.py             # ВСЕ тексты бота (шапка, сообщения)
@@ -92,6 +92,7 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 │   │   ├── models.py
 │   │   └── repositories.py
 │   ├── schemas/                 # pydantic: LeadSlots, LLMReply, EstimateResult
+│   ├── prompts/                 # системные промпты LLM (qualification.py)
 │   └── core/
 │       └── errors.py            # доменные исключения
 ├── assets/catalog/              # фото + catalog.yaml (seed)
@@ -152,7 +153,10 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 - Каждый ход: в DeepSeek уходит system-prompt + история (последние ~12 сообщений) + текущие слоты. Ответ — **строго JSON** (`response_format: json_object`), валидируется pydantic-схемой `LLMReply {reply: str, slots: LeadSlotsPatch, ready: bool}`.
 - При невалидном JSON — 1 ретрай с подсказкой, затем fallback-ответ «уточните, пожалуйста…». Бот не падает.
 - Слоты мержатся в `leads` кодом, **LLM не пишет в БД напрямую**.
-- `ready = true`, когда заполнены обязательные слоты (тип, размеры, телефон) → переход к расчёту.
+- Лид переходит в `qualified`, только если LLM вернул `ready = true` **и** код подтвердил, что заполнены обязательные слоты (тип, размеры, телефон) → переход к расчёту. Телефон нормализуется кодом (`+7XXXXXXXXXX`), невалидный отбрасывается; `null` в слотах не стирает уже известные значения.
+- Любой свободный текст (не команда и не кнопка меню) — ход квалификации: продолжает последний черновик лида или создаёт новый. Кнопка «Оставить заявку» шлёт приветствие и кладёт его в историю.
+- Прошлые ответы ассистента уходят в историю в том же JSON-виде (`{"reply": ...}`): с обычным текстом в истории JSON-режим DeepSeek часто возвращал пустой ответ (замер: 6/14 → 0/8).
+- Лимит текста пользователя — 1000 символов; ответы LLM отправляются без parse_mode (не HTML).
 - Текст пользователя — это данные, а не инструкции: в system-prompt явный запрет менять роль/формат; ответ LLM не исполняется, только парсится.
 
 ### 5.3 Расчёт

@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     admin_chat_id: int | None = None
     admin_ids: Annotated[list[int], NoDecode] = []
 
-    deepseek_api_key: SecretStr | None = None
+    deepseek_api_key: SecretStr
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-chat"
 
