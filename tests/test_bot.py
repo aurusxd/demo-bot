@@ -1,27 +1,22 @@
 import json
-from collections.abc import AsyncIterator
-from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from aiogram import Bot
 from aiogram.methods import SendMessage, TelegramMethod
-from aiogram.types import Chat, ErrorEvent, Message, ReplyKeyboardRemove, Update
-from aiogram.types import User as TgUser
+from aiogram.types import ErrorEvent, ReplyKeyboardRemove
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.bot import texts
 from app.bot.handlers.errors import on_error
 from app.bot.handlers.start import cmd_start
-from app.config import Settings
 from app.core.errors import ExternalServiceError
-from app.db.base import Base, create_engine, create_session_factory
+from app.db.base import create_engine, create_session_factory
 from app.db.models import Lead, LeadStatus
 from app.db.repositories import UserRepository
 from app.main import build_dispatcher
-from tests.fakes import FakeLLMClient, llm_json
+from tests.fakes import BOT_TOKEN, FakeLLMClient, llm_json, make_settings, sent_texts, text_update
 
 TELEGRAM_DESCRIPTION_LIMIT = 512
 TELEGRAM_SHORT_DESCRIPTION_LIMIT = 120
@@ -58,57 +53,11 @@ async def test_error_handler_replies_generic_message() -> None:
     update.message.answer.assert_awaited_once_with(texts.ERROR_GENERIC)
 
 
-def make_settings() -> Settings:
-    return Settings(_env_file=None, bot_token="123:abc", deepseek_api_key="k")  # pyright: ignore[reportCallIssue]
-
-
 def test_dispatcher_builds() -> None:
     session_factory = create_session_factory(create_engine("sqlite+aiosqlite://"))
     dp = build_dispatcher(make_settings(), session_factory, FakeLLMClient())
 
     assert [r.name for r in dp.sub_routers] == ["errors", "start", "qualify"]
-
-
-def text_update(update_id: int, text: str) -> Update:
-    return Update(
-        update_id=update_id,
-        message=Message(
-            message_id=update_id,
-            date=datetime.now(UTC),
-            chat=Chat(id=500, type="private"),
-            from_user=TgUser(id=500, is_bot=False, first_name="Ann", username="ann"),
-            text=text,
-        ),
-    )
-
-
-@pytest.fixture
-async def session_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    engine = create_engine("sqlite+aiosqlite://")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield create_session_factory(engine)
-    await engine.dispose()
-
-
-@pytest.fixture
-def sent(monkeypatch: pytest.MonkeyPatch) -> list[TelegramMethod[Any]]:
-    """Captures every Bot API call instead of sending it."""
-    calls: list[TelegramMethod[Any]] = []
-
-    async def fake_call(self: Bot, method: TelegramMethod[Any], request_timeout: int | None = None):
-        calls.append(method)
-        return True
-
-    monkeypatch.setattr(Bot, "__call__", fake_call)
-    return calls
-
-
-def sent_texts(sent: list[TelegramMethod[Any]]) -> list[str]:
-    return [m.text for m in sent if isinstance(m, SendMessage)]
-
-
-BOT_TOKEN = "123456:" + "A" * 35
 
 
 async def test_start_update_flows_through_dispatcher(
