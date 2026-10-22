@@ -1,7 +1,18 @@
 from datetime import date, datetime
 from enum import StrEnum
 
-from sqlalchemy import BigInteger, Date, DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    BigInteger,
+    Date,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -17,6 +28,12 @@ class FurnitureType(StrEnum):
     KITCHEN = "kitchen"
     WARDROBE = "wardrobe"
     WALK_IN = "walk_in"
+
+
+class PriceClass(StrEnum):
+    ECONOMY = "economy"
+    STANDARD = "standard"
+    PREMIUM = "premium"
 
 
 class CatalogCategory(StrEnum):
@@ -83,6 +100,9 @@ class Lead(Base):
     name: Mapped[str | None] = mapped_column(String(128))
     furniture_type: Mapped[FurnitureType | None] = mapped_column(_str_enum(FurnitureType))
     dimensions: Mapped[str | None] = mapped_column(Text)
+    # Numbers for the estimate, extracted by the LLM and validated by code.
+    length_m: Mapped[float | None] = mapped_column(Float)
+    price_class: Mapped[PriceClass | None] = mapped_column(_str_enum(PriceClass))
     style: Mapped[str | None] = mapped_column(String(128))
     budget: Mapped[str | None] = mapped_column(String(128))
     city: Mapped[str | None] = mapped_column(String(128))

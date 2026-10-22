@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import SecretStr, field_validator
@@ -16,7 +17,7 @@ class Settings(BaseSettings):
     )
 
     bot_token: SecretStr
-    admin_chat_id: int | None = None
+    admin_chat_id: int  # manager chat for lead cards
     admin_ids: Annotated[list[int], NoDecode] = []
 
     deepseek_api_key: SecretStr
@@ -29,7 +30,8 @@ class Settings(BaseSettings):
     polza_stt_model: str
     polza_stt_provider: str | None = None  # Polza routing: provider.only = [this]
 
-    crm_webhook_url: str | None = None
+    crm_webhook_url: SecretStr | None = None  # may embed an access key (e.g. Bitrix24 webhooks)
+    pricing_path: Path = Path("config/pricing.yaml")
     database_url: str = "sqlite+aiosqlite:///data/app.db"
     tryon_daily_limit: int = 5
     throttle_max_messages: int = 10
@@ -46,7 +48,10 @@ class Settings(BaseSettings):
     def secret_values(self) -> list[str]:
         """Raw secret values, used by logging to mask them in every sink."""
         secrets = (self.bot_token, self.deepseek_api_key, self.polza_api_key)
-        return [s.get_secret_value() for s in secrets]
+        values = [s.get_secret_value() for s in secrets]
+        if self.crm_webhook_url is not None:
+            values.append(self.crm_webhook_url.get_secret_value())
+        return values
 
 
 @lru_cache

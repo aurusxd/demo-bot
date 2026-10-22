@@ -3,13 +3,15 @@ from typing import Annotated
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
-from app.db.models import FurnitureType
+from app.db.models import FurnitureType, PriceClass
 
 SHORT_SLOT_MAX_LEN = 128
 LONG_SLOT_MAX_LEN = 1000
 REPLY_MAX_LEN = 2000
 PHONE_MIN_DIGITS = 10
 PHONE_MAX_DIGITS = 15
+MIN_LENGTH_M = 0.5
+MAX_LENGTH_M = 20.0
 
 
 def _clean_text(max_len: int) -> BeforeValidator:
@@ -29,6 +31,24 @@ def _furniture_type(value: object) -> FurnitureType | None:
         return FurnitureType(str(value).strip().lower()) if value else None
     except ValueError:
         return None
+
+
+def _price_class(value: object) -> PriceClass | None:
+    try:
+        return PriceClass(str(value).strip().lower()) if value else None
+    except ValueError:
+        return None
+
+
+def _length_m(value: object) -> float | None:
+    """Total linear meters; out-of-range or non-numeric -> None (no estimate from junk)."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        length = float(str(value).replace(",", ".").strip())
+    except ValueError:
+        return None
+    return round(length, 2) if MIN_LENGTH_M <= length <= MAX_LENGTH_M else None
 
 
 def normalize_phone(value: object) -> str | None:
@@ -57,6 +77,8 @@ class LeadSlotsPatch(BaseModel):
     name: ShortSlot = None
     furniture_type: Annotated[FurnitureType | None, BeforeValidator(_furniture_type)] = None
     dimensions: LongSlot = None
+    length_m: Annotated[float | None, BeforeValidator(_length_m)] = None
+    price_class: Annotated[PriceClass | None, BeforeValidator(_price_class)] = None
     style: ShortSlot = None
     budget: ShortSlot = None
     city: ShortSlot = None

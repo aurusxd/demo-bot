@@ -1,0 +1,20 @@
+# Deterministic price estimate (tech.md §5.3). Demo numbers: replace with the client's price list.
+# estimate = length_m * base_per_meter[furniture_type] * class_coefficient[price_class], then ±spread.
+
+currency: "₽"
+
+# Base price per linear meter, standard materials.
+base_per_meter:
+  kitchen: 45000
+  wardrobe: 30000
+  walk_in: 35000
+
+# Material class multipliers (unknown class -> default_class).
+class_coefficients:
+  economy: 0.8
+  standard: 1.0
+  premium: 1.4
+default_class: standard
+
+spread: 0.15        # range ±15 %
+round_to: 1000      # round bounds to this step

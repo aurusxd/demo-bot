@@ -16,6 +16,7 @@ RUN uv sync --frozen --no-dev
 
 COPY alembic.ini ./
 COPY migrations ./migrations
+COPY config ./config
 COPY app ./app
 
 RUN useradd --create-home --uid 10001 bot \

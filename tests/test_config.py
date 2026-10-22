@@ -9,6 +9,7 @@ def make_settings(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
         "DEEPSEEK_API_KEY": "sk-test-key",
         "POLZA_API_KEY": "pk-test-key",
         "POLZA_STT_MODEL": "openai/whisper-1",
+        "ADMIN_CHAT_ID": "777",
         **env,
     }
     for key, value in env.items():
@@ -29,12 +30,13 @@ def test_deepseek_key_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
         Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
 
 
-@pytest.mark.parametrize("missing", ["POLZA_API_KEY", "POLZA_STT_MODEL"])
-def test_polza_stt_settings_are_required(monkeypatch: pytest.MonkeyPatch, missing: str) -> None:
+@pytest.mark.parametrize("missing", ["POLZA_API_KEY", "POLZA_STT_MODEL", "ADMIN_CHAT_ID"])
+def test_service_settings_are_required(monkeypatch: pytest.MonkeyPatch, missing: str) -> None:
     monkeypatch.setenv("BOT_TOKEN", "123:abc")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deep")
     monkeypatch.setenv("POLZA_API_KEY", "pk")
     monkeypatch.setenv("POLZA_STT_MODEL", "openai/whisper-1")
+    monkeypatch.setenv("ADMIN_CHAT_ID", "777")
     monkeypatch.delenv(missing)
     with pytest.raises(ValidationError):
         Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
@@ -51,9 +53,9 @@ def test_defaults_and_admin_ids_parsing(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_empty_values_fall_back_to_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = make_settings(monkeypatch, BOT_TOKEN="123:abc", ADMIN_CHAT_ID="", LOG_LEVEL="")
+    settings = make_settings(monkeypatch, BOT_TOKEN="123:abc", CRM_WEBHOOK_URL="", LOG_LEVEL="")
 
-    assert settings.admin_chat_id is None
+    assert settings.crm_webhook_url is None
     assert settings.log_level == "INFO"
 
 
@@ -68,4 +70,12 @@ def test_secret_values_are_collected(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     assert settings.secret_values() == ["123:abc", "sk-deep", "pk-polza"]
+
+
+def test_crm_webhook_url_is_masked_as_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    url = "https://crm.example/rest/1/hook-key/"
+    settings = make_settings(monkeypatch, BOT_TOKEN="123:abc", CRM_WEBHOOK_URL=url)
+
+    assert settings.secret_values()[-1] == url
+    assert "hook-key" not in repr(settings)
     assert "sk-deep" not in repr(settings)

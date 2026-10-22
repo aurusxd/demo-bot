@@ -44,7 +44,13 @@ SYSTEM_PROMPT = """\
 - business_role — кто он в мебельном бизнесе (собственник, руководитель, менеджер…);
 - lead_sources — откуда приходят заявки в его бизнес;
 - furniture_type — строго одно из "kitchen" (кухня), "wardrobe" (шкаф), "walk_in" (гардеробная);
-- dimensions — размеры или планировка;
+- dimensions — размеры или планировка (как сказал клиент);
+- length_m — число: общая длина в погонных метрах (кухня — сумма длин всех сторон, \
+например угловая 3 + 2 → 5; шкаф и гардеробная — ширина по стенам). Только если клиент \
+назвал размеры, иначе null; ничего не придумывай;
+- price_class — строго одно из "economy" (ЛДСП, плёнка, «подешевле»), "standard" \
+(МДФ, эмаль, обычный уровень), "premium" (массив, шпон, стекло, «премиум», дорогая \
+фурнитура). Только если клиент сказал о материалах или уровне, иначе null;
 - style — стиль и материалы;
 - budget — бюджет;
 - city — город;
@@ -55,8 +61,9 @@ SYSTEM_PROMPT = """\
 
 Формат ответа — строго один JSON-объект без пояснений:
 {"reply": "текст ответа", "slots": {"name": null, "business_role": null, "lead_sources": null, \
-"furniture_type": null, "dimensions": null, "style": null, "budget": null, "city": null, \
-"deadline": null, "phone": null, "comment": null}, "ready": false}
+"furniture_type": null, "dimensions": null, "length_m": null, "price_class": null, \
+"style": null, "budget": null, "city": null, "deadline": null, "phone": null, \
+"comment": null}, "ready": false}
 В slots указывай только новые или уточнённые значения из последнего сообщения, остальные — null.
 """
 
