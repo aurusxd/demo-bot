@@ -118,7 +118,7 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 Минимум таблиц.
 
 - `users` — `id`, `tg_id` (unique), `username`, `created_at`, `tryon_used_today`, `tryon_reset_date`
-- `leads` — `id`, `user_id`, `status` (`draft|qualified|sent`), `name`, `furniture_type` (`kitchen|wardrobe|walk_in`), `dimensions`, `length_m`, `price_class` (`economy|standard|premium`), `style`, `budget`, `city`, `deadline`, `phone`, `comment`, `business_role`, `lead_sources` (B2B: кто посетитель и откуда у него заявки), `estimate_min`, `estimate_max`, `created_at`, `sent_at`
+- `leads` — `id`, `user_id`, `status` (`draft|qualified|sent`), `name`, `furniture_type` (`kitchen|wardrobe|walk_in`), `dimensions`, `length_m`, `price_class` (`economy|standard|premium`), `style`, `budget`, `city`, `deadline`, `phone`, `comment`, `business_role`, `lead_sources` (B2B: кто посетитель и откуда у него заявки), `estimate_min`, `estimate_max`, `created_at`, `sent_at` (CRM приняла), `manager_notified_at` (карточка ушла менеджеру)
 - `messages` — `id`, `lead_id`, `role` (`user|assistant`), `content`, `kind` (`text|voice|photo`), `created_at` — история для LLM (хранить последние N)
 - `lead_media` — `id`, `lead_id`, `tg_file_id`, `kind`
 - `catalog_items` — `id`, `category` (`kitchen|wardrobe|walk_in|interior`), `title`, `style`, `image_path`, `tg_file_id` (кэш после первой отправки), `source_url`
@@ -180,7 +180,10 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 ### 5.5 Передача лида
 - На ходе перехода `draft → qualified`: ответ LLM → вилка клиенту → `LeadService.submit` (медленная доставка — после ответа клиенту).
 - `LeadService.submit` → `CrmClient.send(LeadPayload)` + карточка в чат менеджера (`ADMIN_CHAT_ID`, обязателен) через `LeadNotifier`: HTML, все значения экранированы, полный телефон, вилка; фото лида следом (1 — фото, 2–10 — альбом).
-- Статус `qualified → sent` и `sent_at` — только если CRM приняла лид. Ошибки CRM/Telegram логируются, клиент их не видит, лид остаётся `qualified`.
+- Доставка отмечается двумя независимыми метками: `status = sent` + `sent_at` (CRM приняла) и `manager_notified_at` (карточка ушла). `submit` делает только недостающее, поэтому повтор безопасен: карточка не дублируется, CRM не получает лид дважды. Ошибки CRM/Telegram логируются, клиент их не видит.
+- **Повтор доставки** (`LeadDeliveryRetrier`): при старте и каждые `LEAD_RETRY_INTERVAL_S` (300 с) — лиды `qualified` (CRM не приняла, бот упал между квалификацией и отправкой) и `sent` без карточки. Каждый лид обрабатывается под той же per-user блокировкой (`UserLocks`), что и апдейты пользователя, — гонки с хендлером нет. Лимита попыток нет (демо): при постоянной ошибке CRM повторы идут бесконечно, каждая — в лог.
+- **Дополнения после доставки**: диалог продолжается на том же лиде. Если менеджеру карточка уже ушла, то изменённые слоты — короткой карточкой «✏️ Дополнение к заявке #N» (только изменённые поля; при смене типа/длины/класса — пересчитанная вилка), новое фото — фото с подписью «📎 Дополнение к заявке #N». В CRM — полный лид с `event = lead.updated` (только если CRM уже приняла лид; иначе свежие данные уйдут с повтором). До доставки ничего не досылается: первая карточка содержит всё. Неудачное дополнение логируется и не повторяется.
+- Тело для CRM — `LeadPayload` с полем `event`: `lead.created` | `lead.updated`; `lead_id` позволяет CRM отсечь дубли при ретрае POST.
 - Демо: `LogCrmClient` (в лог — только id и названия заполненных полей) и `WebhookCrmClient` (POST JSON на `CRM_WEBHOOK_URL`, таймаут 15 с, 1 ретрай; URL считается секретом и маскируется в логах). Реальные CRM клиент подключит позже — через тот же `Protocol`.
 
 ### 5.6 Каталог
@@ -250,6 +253,7 @@ POLZA_STT_PROVIDER=openai # необязательно: provider.only для STT
 
 CRM_WEBHOOK_URL=          # пусто → LogCrmClient; маскируется в логах
 PRICING_PATH=config/pricing.yaml
+LEAD_RETRY_INTERVAL_S=300 # повтор доставки зависших лидов
 DATABASE_URL=sqlite+aiosqlite:///data/app.db
 TRYON_DAILY_LIMIT=5
 LOG_LEVEL=INFO
