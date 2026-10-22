@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.bot.handlers import errors, start
 from app.bot.middlewares.db_session import DbSessionMiddleware
 from app.bot.middlewares.logging import HandlerLoggingMiddleware, UpdateLoggingMiddleware
+from app.bot.middlewares.user import UserMiddleware
 from app.config import Settings, get_settings
 from app.db.base import create_engine, create_session_factory
 from app.logging_setup import setup_logging
@@ -22,10 +23,11 @@ def build_dispatcher(
     dp = Dispatcher(settings=settings)
     dp.update.outer_middleware(UpdateLoggingMiddleware())
     dp.update.outer_middleware(DbSessionMiddleware(session_factory))
+    dp.update.outer_middleware(UserMiddleware())
     for observer in (dp.message, dp.callback_query):
         observer.middleware(HandlerLoggingMiddleware())
 
-    dp.include_routers(errors.router, start.router)
+    dp.include_routers(errors.create_router(), start.create_router())
     return dp
 
 

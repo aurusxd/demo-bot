@@ -27,8 +27,8 @@ dev = [
 package = false
 
 [tool.pyright]
-include = ["app", "tests", "migrations"]
-strict = ["app"]
+include = ["app", "scripts", "tests", "migrations"]
+strict = ["app", "scripts"]
 pythonVersion = "3.12"
 venvPath = "."
 venv = ".venv"
@@ -39,6 +39,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]  # Cyrillic texts are intentional
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

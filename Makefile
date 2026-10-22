@@ -1,4 +1,4 @@
-.PHONY: install run up down test lint fmt migrate revision
+.PHONY: install run up down test lint fmt migrate revision profile
 
 install:
 	uv sync
@@ -29,3 +29,6 @@ migrate:
 
 revision:
 	uv run alembic revision --autogenerate -m "$(m)"
+
+profile:
+	uv run python -m scripts.set_bot_profile

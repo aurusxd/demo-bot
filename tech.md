@@ -80,7 +80,8 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 │   │   ├── leads.py             # сборка и отправка лида
 │   │   ├── catalog.py
 │   │   ├── tryon.py             # примерка
-│   │   └── media.py             # скачивание, валидация, ресайз
+│   │   ├── media.py             # скачивание, валидация, ресайз
+│   │   └── users.py             # регистрация пользователя (upsert по tg_id)
 │   ├── clients/
 │   │   ├── base.py              # Protocol'ы + базовый HttpClient (ретраи, таймауты, логи)
 │   │   ├── deepseek.py
@@ -94,6 +95,8 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 │   └── core/
 │       └── errors.py            # доменные исключения
 ├── assets/catalog/              # фото + catalog.yaml (seed)
+├── assets/header/               # картинка шапки (грузится вручную через @BotFather)
+├── scripts/set_bot_profile.py   # description / short description / команды через Bot API
 ├── config/pricing.yaml          # прайс для расчёта
 ├── migrations/                  # alembic
 ├── tests/
@@ -128,7 +131,8 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 ### 5.1 Шапка бота (то, что видно до `/start`)
 - Текст — Bot API `setMyDescription` (**≤ 512 символов**), кнопка «What can this bot do?» показывает его. Короткое — `setMyShortDescription` (≤ 120).
 - Картинка «Менеджер или бот?» — загружается вручную через @BotFather (`/setdescriptionpic`), в API не настраивается. Файл лежит в `assets/header/`.
-- Текст шапки живёт в `texts.py`; скрипт `scripts/set_bot_profile.py` выставляет description через API. Тест проверяет `len(DESCRIPTION) <= 512`.
+- Текст шапки живёт в `texts.py`; скрипт `scripts/set_bot_profile.py` (`make profile`) выставляет description, short description и список команд через API. Тест проверяет лимиты 512/120 (в UTF-16, как считает Telegram).
+- Пользователь регистрируется `UserMiddleware` на каждом апдейте (атомарный upsert по `tg_id`), в хендлеры приходит как `user`.
 
 Текст (по референсу):
 
