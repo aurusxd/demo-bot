@@ -26,6 +26,7 @@ from app.core.errors import ExternalServiceError
 from app.main import build_dispatcher
 from app.schemas.lead import LeadPayload
 from app.services.estimate import EstimateService, load_pricing
+from app.services.leads import LeadServiceFactory
 
 BOT_TOKEN = "123456:" + "A" * 35
 
@@ -58,9 +59,13 @@ def make_dispatcher(
         llm,
         speech or FakeSpeechClient(),
         downloader or FakeDownloader(),
-        EstimateService(load_pricing(Path("config/pricing.yaml"))),
-        crm or FakeCrmClient(),
-        notifier or FakeNotifier(),
+        make_lead_services(crm or FakeCrmClient(), notifier or FakeNotifier()),
+    )
+
+
+def make_lead_services(crm: CrmClient, notifier: LeadNotifier) -> LeadServiceFactory:
+    return LeadServiceFactory(
+        EstimateService(load_pricing(Path("config/pricing.yaml"))), crm, notifier
     )
 
 
@@ -181,11 +186,17 @@ class FakeNotifier:
     def __init__(self, error: Exception | None = None) -> None:
         self._error = error
         self.cards: list[tuple[str, list[str]]] = []
+        self.photos: list[tuple[str, str]] = []
 
     async def notify(self, card_html: str, photo_file_ids: Sequence[str]) -> None:
         if self._error is not None:
             raise self._error
         self.cards.append((card_html, list(photo_file_ids)))
+
+    async def notify_photo(self, caption_html: str, file_id: str) -> None:
+        if self._error is not None:
+            raise self._error
+        self.photos.append((caption_html, file_id))
 
 
 def image_bytes(image_format: str = "JPEG", size: tuple[int, int] = (8, 8)) -> bytes:

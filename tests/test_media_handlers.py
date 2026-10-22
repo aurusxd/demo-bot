@@ -10,11 +10,14 @@ from app.bot.handlers.media import MediaGroupTracker
 from app.core.errors import ExternalServiceError
 from app.db.models import LeadMedia, Message, MessageKind, MessageRole
 from app.prompts.qualification import PHOTO_MARKER
+from app.schemas.lead import LeadEvent
 from app.services.media import MAX_VOICE_DURATION_S
 from tests.fakes import (
     BOT_TOKEN,
+    FakeCrmClient,
     FakeDownloader,
     FakeLLMClient,
+    FakeNotifier,
     FakeSpeechClient,
     document_update,
     image_bytes,
@@ -22,6 +25,7 @@ from tests.fakes import (
     make_dispatcher,
     photo_update,
     sent_texts,
+    text_update,
     voice_update,
 )
 
@@ -186,3 +190,63 @@ def test_media_group_tracker_forgets_oldest() -> None:
         True,  # "a" was evicted
     ]
     assert tracker.first_seen(None) is True
+
+
+async def test_additions_after_delivery_reach_managers(
+    session_factory: async_sessionmaker[AsyncSession], sent: list[TelegramMethod[Any]]
+) -> None:
+    """Review #1: a city and a photo sent after the card are forwarded as additions."""
+    llm = FakeLLMClient(
+        llm_json(
+            "Спасибо!",
+            ready=True,
+            furniture_type="kitchen",
+            dimensions="3 м",
+            length_m=3,
+            phone="89123451234",
+        ),
+        llm_json("Записал город", city="Казань"),
+    )
+    crm, notifier = FakeCrmClient(), FakeNotifier()
+    dp = make_dispatcher(
+        session_factory,
+        llm,
+        downloader=FakeDownloader({"late": image_bytes()}),
+        crm=crm,
+        notifier=notifier,
+    )
+    bot = Bot(token=BOT_TOKEN)
+
+    await dp.feed_update(bot, text_update(1, "Кухня 3 м, 89123451234"))
+    await dp.feed_update(bot, text_update(2, "Я из Казани"))
+    await dp.feed_update(bot, photo_update(3, "late"))
+
+    assert [lead.event for lead in crm.sent] == [
+        LeadEvent.CREATED,
+        LeadEvent.UPDATED,
+        LeadEvent.UPDATED,
+    ]
+    assert len(notifier.cards) == 2
+    assert "Казань" in notifier.cards[1][0]
+    assert [file_id for _, file_id in notifier.photos] == ["late"]
+    assert sent_texts(sent)[-1] == texts.PHOTO_RECEIVED  # the client sees the usual answer
+
+
+async def test_photo_before_delivery_is_not_forwarded_twice(
+    session_factory: async_sessionmaker[AsyncSession], sent: list[TelegramMethod[Any]]
+) -> None:
+    """A captioned photo that completes qualification is already in the first card."""
+    llm = FakeLLMClient(
+        llm_json(
+            "Спасибо!", ready=True, furniture_type="kitchen", dimensions="3 м", phone="89123451234"
+        )
+    )
+    notifier = FakeNotifier()
+    dp = make_dispatcher(
+        session_factory, llm, downloader=FakeDownloader({"p1": image_bytes()}), notifier=notifier
+    )
+
+    await dp.feed_update(Bot(token=BOT_TOKEN), photo_update(1, "p1", caption="Кухня, 89123451234"))
+
+    assert [photos for _, photos in notifier.cards] == [["p1"]]
+    assert notifier.photos == []

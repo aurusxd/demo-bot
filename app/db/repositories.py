@@ -1,9 +1,9 @@
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import Base
-from app.db.models import Lead, LeadMedia, MediaKind, Message, User
+from app.db.models import Lead, LeadMedia, LeadStatus, MediaKind, Message, User
 
 
 class UnitOfWork:
@@ -68,6 +68,19 @@ class LeadRepository(BaseRepository[Lead]):
         """The user's current dialog: the newest lead in any status."""
         stmt = select(Lead).where(Lead.user_id == user_id).order_by(Lead.id.desc()).limit(1)
         return (await self._session.scalars(stmt)).first()
+
+    async def list_undelivered(self) -> list[tuple[int, int]]:
+        """(lead_id, tg_id) of qualified leads not accepted by the CRM or not shown to managers."""
+        stmt = (
+            select(Lead.id, User.tg_id)
+            .join(User, User.id == Lead.user_id)
+            .where(
+                Lead.status.in_((LeadStatus.QUALIFIED, LeadStatus.SENT)),
+                or_(Lead.status == LeadStatus.QUALIFIED, Lead.manager_notified_at.is_(None)),
+            )
+            .order_by(Lead.id)
+        )
+        return [(lead_id, tg_id) for lead_id, tg_id in (await self._session.execute(stmt)).all()]
 
 
 class LeadMediaRepository(BaseRepository[LeadMedia]):

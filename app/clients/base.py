@@ -61,6 +61,10 @@ class LeadNotifier(Protocol):
         """Send the lead card (and its photos) to the managers' chat."""
         ...
 
+    async def notify_photo(self, caption_html: str, file_id: str) -> None:
+        """Send one photo with a caption to the managers' chat."""
+        ...
+
 
 class HttpClient:
     """Shared async HTTP client: timeouts, retries with backoff, one log line per attempt."""

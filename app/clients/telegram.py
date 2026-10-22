@@ -71,6 +71,12 @@ class TelegramLeadNotifier:
                     self._chat_id, [InputMediaPhoto(media=file_id) for file_id in photos]
                 )
 
+    async def notify_photo(self, caption_html: str, file_id: str) -> None:
+        with _telegram_call("send_lead_photo"):
+            await self._bot.send_photo(
+                self._chat_id, file_id, caption=caption_html, parse_mode=ParseMode.HTML
+            )
+
 
 def _elapsed_ms(started: float) -> int:
     return round((time.perf_counter() - started) * 1000)

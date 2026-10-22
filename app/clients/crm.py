@@ -13,7 +13,10 @@ class LogCrmClient:
 
     async def send(self, lead: LeadPayload) -> None:
         logger.info(
-            "crm lead logged service=log lead_id={} fields={}", lead.lead_id, lead.filled_fields()
+            "crm lead logged service=log event={} lead_id={} fields={}",
+            lead.event,
+            lead.lead_id,
+            lead.filled_fields(),
         )
 
     async def close(self) -> None:
@@ -38,7 +41,7 @@ class WebhookCrmClient:
 
     async def send(self, lead: LeadPayload) -> None:
         await self._http.request("POST", self._url, json=lead.model_dump(mode="json"))
-        logger.info("crm lead sent service=webhook lead_id={}", lead.lead_id)
+        logger.info("crm lead sent service=webhook event={} lead_id={}", lead.event, lead.lead_id)
 
     async def close(self) -> None:
         await self._http.close()

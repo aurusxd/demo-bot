@@ -115,7 +115,9 @@ class Lead(Base):
     estimate_min: Mapped[int | None] = mapped_column(Integer)
     estimate_max: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = _created_at()
-    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # CRM accepted
+    # The managers' card went out; set independently so a retry never re-sends it.
+    manager_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Message(Base):

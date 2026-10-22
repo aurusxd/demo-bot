@@ -52,8 +52,15 @@ REQUIRED_SLOTS = ("furniture_type", "dimensions", "phone")
 class TurnResult:
     reply: str | None  # None -> LLM failed, the bot answers with a fallback text
     lead_id: int | None = None
+    changed_slots: tuple[str, ...] = ()  # slots whose value changed on this turn
     qualified: bool = False  # True only on the turn the lead became qualified
     slots: dict[str, str] = field(default_factory=dict[str, str])
+
+
+@dataclass(frozen=True, slots=True)
+class PhotoAttached:
+    lead_id: int
+    after_delivery: bool  # managers already got the card: forward this photo separately
 
 
 class QualificationService:
@@ -113,11 +120,17 @@ class QualificationService:
                 qualified,
             )
             return TurnResult(
-                reply=reply.reply, lead_id=lead.id, qualified=qualified, slots=_lead_slots(lead)
+                reply=reply.reply,
+                lead_id=lead.id,
+                qualified=qualified,
+                changed_slots=tuple(updated),
+                slots=_lead_slots(lead),
             )
 
-    async def attach_photo(self, user: User, tg_file_id: str, ack: str | None) -> None:
+    async def attach_photo(self, user: User, tg_file_id: str, ack: str | None) -> PhotoAttached:
         """Attach a validated photo to the current lead (no analysis, no LLM call).
+
+        A photo sent after delivery is reported, so the caller forwards it to managers.
 
         The history gets a marker so the LLM knows a photo was sent, plus the bot's
         acknowledgement `ack` if one is sent to the user.
@@ -132,6 +145,7 @@ class QualificationService:
                 await self._save_message(lead, MessageRole.ASSISTANT, ack)
             await self._uow.commit()
             logger.info("photo attached to lead lead_id={}", lead.id)
+            return PhotoAttached(lead.id, after_delivery=lead.manager_notified_at is not None)
 
     async def _get_or_create_lead(self, user: User) -> Lead:
         # The dialog continues on the latest lead even after it is qualified, so the bot keeps

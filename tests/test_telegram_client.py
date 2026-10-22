@@ -89,3 +89,13 @@ async def test_notifier_api_error_becomes_external_service_error() -> None:
         await TelegramLeadNotifier(bot, chat_id=777).notify("card", ["p1"])
 
     bot.send_photo.assert_not_awaited()
+
+
+async def test_notifier_sends_photo_with_html_caption() -> None:
+    bot = make_notifier_bot()
+
+    await TelegramLeadNotifier(bot, chat_id=777).notify_photo("<b>Дополнение</b>", "p1")
+
+    bot.send_photo.assert_awaited_once_with(
+        777, "p1", caption="<b>Дополнение</b>", parse_mode=ParseMode.HTML
+    )

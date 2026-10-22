@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -32,6 +32,7 @@ class Settings(BaseSettings):
 
     crm_webhook_url: SecretStr | None = None  # may embed an access key (e.g. Bitrix24 webhooks)
     pricing_path: Path = Path("config/pricing.yaml")
+    lead_retry_interval_s: float = Field(default=300.0, gt=0)  # re-delivery of stuck leads
     database_url: str = "sqlite+aiosqlite:///data/app.db"
     tryon_daily_limit: int = 5
     throttle_max_messages: int = 10

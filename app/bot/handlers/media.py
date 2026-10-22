@@ -97,11 +97,15 @@ async def photo_message(
     caption = (message.caption or "").strip()
     first_in_album = media_groups.first_seen(message.media_group_id)
     ack = texts.PHOTO_RECEIVED if not caption and first_in_album else None
-    await qualification.attach_photo(user, photo.file_id, ack)
+    attached = await qualification.attach_photo(user, photo.file_id, ack)
     if caption:
         await run_dialog_turn(message, user, qualification, leads, caption)
     elif ack is not None:
         await message.answer(ack)
+    if attached.after_delivery:
+        # After the client got the answer. A photo that arrived before delivery is already
+        # part of the first card, so it is not forwarded twice.
+        await leads.send_update(attached.lead_id, photo_file_id=photo.file_id)
 
 
 async def image_document(message: Message) -> None:

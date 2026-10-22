@@ -82,6 +82,8 @@ LEAD_CARD_NO_ESTIMATE = "💰 <b>Расчёт:</b> после замера"
 LEAD_CARD_CONTACT = "✈️ <b>Telegram:</b> {contact}"
 LEAD_CARD_PHOTOS = "📎 <b>Фото:</b> {count} (ниже)"
 LEAD_CARD_FIELD = "<b>{label}:</b> {value}"
+LEAD_UPDATE_TITLE = "✏️ <b>Дополнение к заявке #{lead_id}</b>"
+LEAD_UPDATE_PHOTO = "📎 <b>Дополнение к заявке #{lead_id}:</b> фото"
 LEAD_CARD_B2B_TITLE = "\n🏢 <i>О посетителе демо</i>"
 
 # Order and labels of the card fields.

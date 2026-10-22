@@ -18,6 +18,7 @@ WEBHOOK_URL = "https://crm.test/rest/1/secret-hook/lead.add"
 
 def make_lead(**overrides: object) -> LeadPayload:
     fields: dict[str, object] = {
+        "event": "lead.created",
         "lead_id": 7,
         "tg_id": 500,
         "tg_username": "ann",
@@ -65,6 +66,7 @@ async def test_webhook_posts_lead_json() -> None:
     await client.send(make_lead())
 
     body = json.loads(route.calls.last.request.content)
+    assert body["event"] == "lead.created"
     assert body["lead_id"] == 7
     assert body["furniture_type"] == "kitchen"
     assert body["phone"] == "+79123451234"

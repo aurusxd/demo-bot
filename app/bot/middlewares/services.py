@@ -5,15 +5,14 @@ from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.clients.base import CrmClient, LeadNotifier, LLMClient
+from app.clients.base import LLMClient
 from app.db.repositories import (
     LeadMediaRepository,
     LeadRepository,
     MessageRepository,
     UnitOfWork,
 )
-from app.services.estimate import EstimateService
-from app.services.leads import LeadService
+from app.services.leads import LeadServiceFactory
 from app.services.media import MediaService
 from app.services.qualification import QualificationService
 
@@ -31,15 +30,11 @@ class ServicesMiddleware(BaseMiddleware):
         self,
         llm: LLMClient,
         media: MediaService,
-        estimator: EstimateService,
-        crm: CrmClient,
-        notifier: LeadNotifier,
+        lead_services: LeadServiceFactory,
     ) -> None:
         self._llm = llm
         self._media = media  # stateless (clients only), shared by all updates
-        self._estimator = estimator
-        self._crm = crm
-        self._notifier = notifier
+        self._lead_services = lead_services
 
     async def __call__(self, handler: Handler, event: TelegramObject, data: dict[str, Any]) -> Any:
         session = data.get("session")
@@ -51,13 +46,6 @@ class ServicesMiddleware(BaseMiddleware):
                 LeadMediaRepository(session),
                 UnitOfWork(session),
             )
-            data["leads"] = LeadService(
-                self._estimator,
-                self._crm,
-                self._notifier,
-                LeadRepository(session),
-                LeadMediaRepository(session),
-                UnitOfWork(session),
-            )
+            data["leads"] = self._lead_services.build(session)
         data["media"] = self._media
         return await handler(event, data)

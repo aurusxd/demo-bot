@@ -1,8 +1,14 @@
 from datetime import datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
 from app.db.models import FurnitureType, PriceClass
+
+
+class LeadEvent(StrEnum):
+    CREATED = "lead.created"  # first delivery of a qualified lead
+    UPDATED = "lead.updated"  # the client added data or photos after delivery
 
 
 class LeadPayload(BaseModel):
@@ -10,6 +16,7 @@ class LeadPayload(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    event: LeadEvent
     lead_id: int
     tg_id: int
     tg_username: str | None
@@ -34,4 +41,9 @@ class LeadPayload(BaseModel):
 
     def filled_fields(self) -> list[str]:
         """Names of non-empty fields: safe to log (no values)."""
-        return [name for name, value in self.model_dump().items() if value not in (None, [])]
+        skip = {"event"}
+        return [
+            name
+            for name, value in self.model_dump().items()
+            if name not in skip and value not in (None, [])
+        ]

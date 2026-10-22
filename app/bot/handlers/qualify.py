@@ -32,11 +32,15 @@ async def run_dialog_turn(
     # LLM output is plain text: never parse it as HTML. On qualification the LLM itself
     # thanks the client and recaps the order, so no robotic summary is sent here.
     await message.answer(result.reply or texts.QUALIFY_FALLBACK, parse_mode=None)
-    if result.qualified and result.lead_id is not None:
+    if result.lead_id is None:
+        return
+    if result.qualified:
         # The client gets the estimate first; slow CRM/manager delivery happens after it.
         estimate = await leads.estimate(result.lead_id)
         await message.answer(_estimate_text(estimate))
-        await leads.submit(user, result.lead_id)
+        await leads.submit(result.lead_id)
+    elif result.changed_slots:
+        await leads.send_update(result.lead_id, result.changed_slots)
 
 
 async def dialog_message(
