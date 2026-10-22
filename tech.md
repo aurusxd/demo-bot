@@ -86,7 +86,7 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 │   │   ├── base.py              # Protocol'ы + базовый HttpClient (ретраи, таймауты, логи)
 │   │   ├── deepseek.py
 │   │   ├── polza.py             # image-gen, speech-to-text
-│   │   ├── telegram.py          # скачивание файлов из Telegram в память (FileDownloader)
+│   │   ├── telegram.py          # скачивание файлов (FileDownloader), карточка менеджеру (LeadNotifier)
 │   │   └── crm.py               # LogCrmClient (демо), WebhookCrmClient
 │   ├── db/
 │   │   ├── base.py              # Base, engine, session factory
@@ -118,7 +118,7 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 Минимум таблиц.
 
 - `users` — `id`, `tg_id` (unique), `username`, `created_at`, `tryon_used_today`, `tryon_reset_date`
-- `leads` — `id`, `user_id`, `status` (`draft|qualified|sent`), `name`, `furniture_type` (`kitchen|wardrobe|walk_in`), `dimensions`, `style`, `budget`, `city`, `deadline`, `phone`, `comment`, `business_role`, `lead_sources` (B2B: кто посетитель и откуда у него заявки), `estimate_min`, `estimate_max`, `created_at`, `sent_at`
+- `leads` — `id`, `user_id`, `status` (`draft|qualified|sent`), `name`, `furniture_type` (`kitchen|wardrobe|walk_in`), `dimensions`, `length_m`, `price_class` (`economy|standard|premium`), `style`, `budget`, `city`, `deadline`, `phone`, `comment`, `business_role`, `lead_sources` (B2B: кто посетитель и откуда у него заявки), `estimate_min`, `estimate_max`, `created_at`, `sent_at`
 - `messages` — `id`, `lead_id`, `role` (`user|assistant`), `content`, `kind` (`text|voice|photo`), `created_at` — история для LLM (хранить последние N)
 - `lead_media` — `id`, `lead_id`, `tg_file_id`, `kind`
 - `catalog_items` — `id`, `category` (`kitchen|wardrobe|walk_in|interior`), `title`, `style`, `image_path`, `tg_file_id` (кэш после первой отправки), `source_url`
@@ -168,17 +168,20 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 - Текст пользователя — это данные, а не инструкции: в system-prompt явный запрет менять роль/формат; ответ LLM не исполняется, только парсится.
 
 ### 5.3 Расчёт
-- **Детерминированный, без LLM.** `config/pricing.yaml`: базовая цена за погонный метр по типу мебели × коэффициент класса материалов/стиля.
-- Результат — вилка ±15 % + дисклеймер «предварительно, точную цену назовёт менеджер».
-- Если размеров недостаточно — расчёт не делаем, спрашиваем.
+- **Детерминированный, без LLM.** `config/pricing.yaml` (путь — `PRICING_PATH`, валидируется pydantic при старте): базовая цена за погонный метр по типу мебели × коэффициент класса материалов (`economy 0.8 / standard 1.0 / premium 1.4`, по умолчанию `standard`).
+- LLM только **извлекает числа** в слоты `length_m` (погонные метры: кухня — сумма сторон, шкаф/гардеробная — ширина; код принимает 0,5–20 м) и `price_class` (`economy|standard|premium`); цену считает `EstimateService`.
+- Результат — вилка ±15 %, округление до 1 000 ₽, сохраняется в `leads.estimate_min/max`; клиенту — отдельным сообщением после благодарности LLM, с дисклеймером «ориентир, точную стоимость назовёт менеджер после замера».
+- Если длины нет (клиент не знает размеров) — расчёт не делаем: клиенту «точную стоимость посчитает менеджер после замера», лид всё равно передаётся.
 
 ### 5.4 Фото и голос
 - **Голос:** длительность ≤ 60 с проверяется до скачивания → `.ogg` скачивается в память → транскрипция через Polza `POST /v1/audio/transcriptions` (JSON, `file` = base64 data-URL, `language=ru`, модель `POLZA_STT_MODEL`, провайдер `POLZA_STT_PROVIDER` → `provider.only`; таймаут 30 с, 1 ретрай) → текст идёт в тот же пайплайн квалификации (`messages.kind = voice`). Пустая расшифровка → просьба повторить; ошибка STT → просьба написать текстом.
 - **Фото:** без анализа. Принимаем только сжатое фото (Telegram сам перекодирует его и убирает EXIF); картинку, присланную файлом, просим отправить как фото. Валидация: ≤ 10 МБ, скачивание в память, Pillow `verify` в `asyncio.to_thread`, формат `JPEG/PNG/WEBP`; байты сразу выбрасываются. В лид сохраняется `tg_file_id` (`lead_media`), в историю — маркер «[Клиент прислал фото]» (LLM знает, что фото есть, но его не видит). Без подписи — короткое подтверждение без вызова LLM (альбом — одно подтверждение); подпись — обычный ход диалога. Менеджеру фото пересылается вместе с карточкой лида (слайс 4). Для примерки (§5.7) фото дополнительно ресайзится ≤ 1536 px.
 
 ### 5.5 Передача лида
-- Сервис `LeadService.submit(lead)` → `CrmClient.send(lead)` + карточка в чат менеджера (`ADMIN_CHAT_ID`) с слотами, вилкой цены и фото.
-- Демо: `LogCrmClient` (пишет в лог) и `WebhookCrmClient` (POST на `CRM_WEBHOOK_URL`, если задан). Реальные CRM клиент подключит позже — через тот же `Protocol`.
+- На ходе перехода `draft → qualified`: ответ LLM → вилка клиенту → `LeadService.submit` (медленная доставка — после ответа клиенту).
+- `LeadService.submit` → `CrmClient.send(LeadPayload)` + карточка в чат менеджера (`ADMIN_CHAT_ID`, обязателен) через `LeadNotifier`: HTML, все значения экранированы, полный телефон, вилка; фото лида следом (1 — фото, 2–10 — альбом).
+- Статус `qualified → sent` и `sent_at` — только если CRM приняла лид. Ошибки CRM/Telegram логируются, клиент их не видит, лид остаётся `qualified`.
+- Демо: `LogCrmClient` (в лог — только id и названия заполненных полей) и `WebhookCrmClient` (POST JSON на `CRM_WEBHOOK_URL`, таймаут 15 с, 1 ретрай; URL считается секретом и маскируется в логах). Реальные CRM клиент подключит позже — через тот же `Protocol`.
 
 ### 5.6 Каталог
 - Источник: `assets/catalog/catalog.yaml` + файлы фото. Сидится в БД при старте (идемпотентно).
@@ -232,7 +235,7 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 
 ```
 BOT_TOKEN=
-ADMIN_CHAT_ID=
+ADMIN_CHAT_ID=            # обязателен: чат для карточек лидов
 ADMIN_IDS=
 
 DEEPSEEK_API_KEY=
@@ -245,7 +248,8 @@ POLZA_IMAGE_MODEL=        # Nano Banana: google/gemini-3.1-flash-lite-image
 POLZA_STT_MODEL=openai/whisper-1
 POLZA_STT_PROVIDER=openai # необязательно: provider.only для STT
 
-CRM_WEBHOOK_URL=          # пусто → LogCrmClient
+CRM_WEBHOOK_URL=          # пусто → LogCrmClient; маскируется в логах
+PRICING_PATH=config/pricing.yaml
 DATABASE_URL=sqlite+aiosqlite:///data/app.db
 TRYON_DAILY_LIMIT=5
 LOG_LEVEL=INFO
