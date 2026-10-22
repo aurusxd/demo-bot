@@ -1,8 +1,9 @@
+from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import Base
-from app.db.models import User
+from app.db.models import Lead, LeadStatus, Message, User
 
 
 class BaseRepository[ModelT: Base]:
@@ -18,6 +19,11 @@ class BaseRepository[ModelT: Base]:
 
     async def add(self, obj: ModelT) -> ModelT:
         self._session.add(obj)
+        await self._session.flush()
+        return obj
+
+    async def save(self, obj: ModelT) -> ModelT:
+        """Flush pending attribute changes of an already tracked object."""
         await self._session.flush()
         return obj
 
@@ -39,3 +45,30 @@ class UserRepository(BaseRepository[User]):
         )
         result = await self._session.scalars(stmt, execution_options={"populate_existing": True})
         return result.one()
+
+
+class LeadRepository(BaseRepository[Lead]):
+    model = Lead
+
+    async def get_latest_draft(self, user_id: int) -> Lead | None:
+        stmt = (
+            select(Lead)
+            .where(Lead.user_id == user_id, Lead.status == LeadStatus.DRAFT)
+            .order_by(Lead.id.desc())
+            .limit(1)
+        )
+        return (await self._session.scalars(stmt)).first()
+
+
+class MessageRepository(BaseRepository[Message]):
+    model = Message
+
+    async def get_last(self, lead_id: int, limit: int) -> list[Message]:
+        """Last `limit` messages of a lead in chronological order."""
+        stmt = (
+            select(Message)
+            .where(Message.lead_id == lead_id)
+            .order_by(Message.id.desc())
+            .limit(limit)
+        )
+        return list(reversed((await self._session.scalars(stmt)).all()))

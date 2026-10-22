@@ -9,3 +9,7 @@ class ExternalServiceError(AppError):
         super().__init__(f"{service}: {message}")
         self.service = service
         self.status_code = status_code
+
+
+class InvalidInputError(AppError):
+    """User input failed validation (too long, empty, wrong type)."""
