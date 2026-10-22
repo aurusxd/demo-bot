@@ -11,7 +11,9 @@ from app.bot.handlers import errors, qualify, start
 from app.bot.middlewares.db_session import DbSessionMiddleware
 from app.bot.middlewares.logging import HandlerLoggingMiddleware, UpdateLoggingMiddleware
 from app.bot.middlewares.services import ServicesMiddleware
+from app.bot.middlewares.throttle import ThrottlingMiddleware
 from app.bot.middlewares.user import UserMiddleware
+from app.bot.middlewares.user_lock import UserLockMiddleware
 from app.clients.base import LLMClient
 from app.clients.deepseek import DeepSeekClient
 from app.config import Settings, get_settings
@@ -24,14 +26,19 @@ def build_dispatcher(
 ) -> Dispatcher:
     """Manual DI container: wires middlewares, routers and shared dependencies."""
     dp = Dispatcher(settings=settings)
+    # Order matters: throttle and serialize per user *before* opening a DB session.
     dp.update.outer_middleware(UpdateLoggingMiddleware())
+    dp.update.outer_middleware(
+        ThrottlingMiddleware(settings.throttle_max_messages, settings.throttle_window_s)
+    )
+    dp.update.outer_middleware(UserLockMiddleware())
     dp.update.outer_middleware(DbSessionMiddleware(session_factory))
     dp.update.outer_middleware(UserMiddleware())
     dp.update.outer_middleware(ServicesMiddleware(llm))
     for observer in (dp.message, dp.callback_query):
         observer.middleware(HandlerLoggingMiddleware())
 
-    # Order matters: commands and menu buttons before the free-text qualification catch-all.
+    # Order matters: commands before the free-text dialog catch-all.
     dp.include_routers(errors.create_router(), start.create_router(), qualify.create_router())
     return dp
 

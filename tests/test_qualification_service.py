@@ -1,23 +1,34 @@
+import asyncio
 import json
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.clients.base import LLMClient
 from app.core.errors import ExternalServiceError, InvalidInputError
 from app.db.models import FurnitureType, Lead, LeadStatus, Message, MessageRole, User
-from app.db.repositories import LeadRepository, MessageRepository, UserRepository
+from app.db.repositories import LeadRepository, MessageRepository, UnitOfWork, UserRepository
 from app.prompts.qualification import INVALID_JSON_HINT
-from app.services.qualification import HISTORY_LIMIT, SLOT_FIELDS, QualificationService
-from tests.fakes import FakeLLMClient, llm_json
+from app.services.qualification import (
+    HISTORY_LIMIT,
+    LLM_TURN_BUDGET_S,
+    SLOT_FIELDS,
+    QualificationService,
+)
+from tests.fakes import FakeLLMClient, SlowLLMClient, llm_json
 
 
 async def make_user(session: AsyncSession) -> User:
     return await UserRepository(session).upsert(1, "u")
 
 
-def make_service(session: AsyncSession, llm: FakeLLMClient) -> QualificationService:
-    return QualificationService(llm, LeadRepository(session), MessageRepository(session))
+def make_service(
+    session: AsyncSession, llm: LLMClient, llm_budget_s: float = LLM_TURN_BUDGET_S
+) -> QualificationService:
+    return QualificationService(
+        llm, LeadRepository(session), MessageRepository(session), UnitOfWork(session), llm_budget_s
+    )
 
 
 async def get_messages(session: AsyncSession) -> list[Message]:
@@ -191,3 +202,48 @@ async def test_assistant_history_is_sent_as_json(session: AsyncSession) -> None:
     assert assistant[0]["ready"] is False
     assert set(assistant[0]["slots"]) == set(SLOT_FIELDS)
     assert all(v is None for v in assistant[0]["slots"].values())
+
+
+async def test_dialog_continues_on_lead_after_qualification(session: AsyncSession) -> None:
+    """Review #4: after "заявка собрана" the bot must not forget the client."""
+    user = await make_user(session)
+    llm = FakeLLMClient(
+        llm_json(
+            "Спасибо, Влад!",
+            ready=True,
+            name="Влад",
+            furniture_type="kitchen",
+            dimensions="3 м",
+            phone="89123451234",
+        ),
+        llm_json("Точную цену назовёт менеджер, Влад", ready=True),
+    )
+    service = make_service(session, llm)
+    await service.start(user, "Как вас зовут?")
+
+    first = await service.handle_message(user, "Влад, кухня 3 м, 89123451234")
+    second = await service.handle_message(user, "Спасибо! А сколько будет стоить?")
+
+    assert first.qualified is True
+    assert second.qualified is False  # already qualified: no second transition
+    leads = (await session.scalars(select(Lead))).all()
+    assert len(leads) == 1
+    assert leads[0].status is LeadStatus.QUALIFIED
+    prompt = llm.calls[1]
+    assert '"name": "Влад"' in prompt[1].content  # known slots are still sent
+    history = [m.content for m in prompt[2:] if m.role == "user"]
+    assert history == ["Влад, кухня 3 м, 89123451234", "Спасибо! А сколько будет стоить?"]
+
+
+async def test_llm_turn_budget_returns_fallback(session: AsyncSession) -> None:
+    """Review #2: a hanging LLM must not keep the user waiting for minutes."""
+    user = await make_user(session)
+    service = make_service(session, SlowLLMClient(delay_s=5), llm_budget_s=0.05)
+
+    started = asyncio.get_running_loop().time()
+    result = await service.handle_message(user, "кухня")
+
+    assert result.reply is None
+    assert asyncio.get_running_loop().time() - started < 1
+    roles = [m.role for m in await get_messages(session)]
+    assert roles == [MessageRole.USER]  # the user's message is kept, no assistant reply

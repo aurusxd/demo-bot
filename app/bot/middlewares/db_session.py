@@ -10,12 +10,19 @@ Handler = Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]]
 
 
 class DbSessionMiddleware(BaseMiddleware):
-    """One session + transaction per update: commit on success, rollback on error."""
+    """One session per update. Services commit early via UnitOfWork (short transactions);
+    whatever is left is committed on success and rolled back on error."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
 
     async def __call__(self, handler: Handler, event: TelegramObject, data: dict[str, Any]) -> Any:
-        async with self._session_factory.begin() as session:
+        async with self._session_factory() as session:
             data["session"] = session
-            return await handler(event, data)
+            try:
+                result = await handler(event, data)
+            except Exception:
+                await session.rollback()
+                raise
+            await session.commit()
+            return result

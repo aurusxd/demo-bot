@@ -1,3 +1,4 @@
+import asyncio
 import json
 from dataclasses import dataclass, field
 
@@ -7,11 +8,13 @@ from pydantic import ValidationError
 from app.clients.base import ChatMessage, LLMClient
 from app.core.errors import ExternalServiceError, InvalidInputError
 from app.db.models import Lead, LeadStatus, Message, MessageKind, MessageRole, User
-from app.db.repositories import LeadRepository, MessageRepository
+from app.db.repositories import LeadRepository, MessageRepository, UnitOfWork
 from app.prompts.qualification import CURRENT_SLOTS_TEMPLATE, INVALID_JSON_HINT, SYSTEM_PROMPT
 from app.schemas.qualification import LLMReply
 
 HISTORY_LIMIT = 12
+# Hard cap for one dialog turn (all LLM attempts): the user must not wait for minutes.
+LLM_TURN_BUDGET_S = 45.0
 MAX_USER_TEXT_LEN = 1000
 SLOT_FIELDS = (
     "name",
@@ -32,17 +35,26 @@ REQUIRED_SLOTS = ("furniture_type", "dimensions", "phone")
 @dataclass(frozen=True, slots=True)
 class TurnResult:
     reply: str | None  # None -> LLM failed, the bot answers with a fallback text
-    qualified: bool = False
+    qualified: bool = False  # True only on the turn the lead became qualified
     slots: dict[str, str] = field(default_factory=dict[str, str])
 
 
 class QualificationService:
     """Lead qualification dialog: the LLM proposes, the code validates and applies."""
 
-    def __init__(self, llm: LLMClient, leads: LeadRepository, messages: MessageRepository) -> None:
+    def __init__(
+        self,
+        llm: LLMClient,
+        leads: LeadRepository,
+        messages: MessageRepository,
+        uow: UnitOfWork,
+        llm_budget_s: float = LLM_TURN_BUDGET_S,
+    ) -> None:
         self._llm = llm
         self._leads = leads
         self._messages = messages
+        self._uow = uow
+        self._llm_budget_s = llm_budget_s
 
     async def start(self, user: User, greeting: str) -> None:
         """Fresh dialog for /start: a new draft lead whose history opens with the greeting."""
@@ -56,18 +68,22 @@ class QualificationService:
             logger.info("qualification input rejected text_len={}", len(text))
             raise InvalidInputError(f"text length {len(text)}")
 
-        lead = await self._get_or_create_draft(user)
+        lead = await self._get_or_create_lead(user)
         with logger.contextualize(lead_id=lead.id):
             await self._save_message(lead, MessageRole.USER, text)
-            reply = await self._ask_llm(lead)
+            history = await self._messages.get_last(lead.id, HISTORY_LIMIT)
+            await self._uow.commit()  # release the SQLite write lock before the slow LLM call
+
+            reply = await self._ask_llm(lead, history)
             if reply is None:
                 return TurnResult(reply=None, slots=_lead_slots(lead))
 
             updated = await self._apply_slots(lead, reply)
             await self._save_message(lead, MessageRole.ASSISTANT, reply.reply)
-            qualified = reply.ready and _required_filled(lead)
+            qualified = lead.status is LeadStatus.DRAFT and reply.ready and _required_filled(lead)
             if qualified:
                 await self._set_status(lead, LeadStatus.QUALIFIED)
+            await self._uow.commit()
             logger.info(
                 "qualification turn done updated_slots={} llm_ready={} qualified={}",
                 updated,
@@ -76,8 +92,10 @@ class QualificationService:
             )
             return TurnResult(reply=reply.reply, qualified=qualified, slots=_lead_slots(lead))
 
-    async def _get_or_create_draft(self, user: User) -> Lead:
-        lead = await self._leads.get_latest_draft(user.id)
+    async def _get_or_create_lead(self, user: User) -> Lead:
+        # The dialog continues on the latest lead even after it is qualified, so the bot keeps
+        # the name and the context. Only /start begins a new lead.
+        lead = await self._leads.get_latest(user.id)
         return lead if lead is not None else await self._create_draft(user)
 
     async def _create_draft(self, user: User) -> Lead:
@@ -85,13 +103,20 @@ class QualificationService:
         logger.info("lead created lead_id={} status={}", lead.id, lead.status)
         return lead
 
-    async def _ask_llm(self, lead: Lead) -> LLMReply | None:
-        history = await self._messages.get_last(lead.id, HISTORY_LIMIT)
+    async def _ask_llm(self, lead: Lead, history: list[Message]) -> LLMReply | None:
         prompt = [
             ChatMessage("system", SYSTEM_PROMPT),
             ChatMessage("system", CURRENT_SLOTS_TEMPLATE.format(slots=_slots_json(lead))),
             *(_to_chat_message(m) for m in history),
         ]
+        try:
+            async with asyncio.timeout(self._llm_budget_s):
+                return await self._ask_with_retry(prompt)
+        except TimeoutError:
+            logger.warning("llm turn budget exceeded budget_s={}", self._llm_budget_s)
+            return None
+
+    async def _ask_with_retry(self, prompt: list[ChatMessage]) -> LLMReply | None:
         for attempt in (1, 2):
             try:
                 raw = await self._llm.complete_json(prompt)

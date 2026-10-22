@@ -3,7 +3,21 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import Base
-from app.db.models import Lead, LeadStatus, Message, User
+from app.db.models import Lead, Message, User
+
+
+class UnitOfWork:
+    """Commits the update's session.
+
+    Services commit before slow external calls (LLM, HTTP) so SQLite's write lock is
+    never held while waiting: otherwise every other update fails with "database is locked".
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def commit(self) -> None:
+        await self._session.commit()
 
 
 class BaseRepository[ModelT: Base]:
@@ -50,13 +64,9 @@ class UserRepository(BaseRepository[User]):
 class LeadRepository(BaseRepository[Lead]):
     model = Lead
 
-    async def get_latest_draft(self, user_id: int) -> Lead | None:
-        stmt = (
-            select(Lead)
-            .where(Lead.user_id == user_id, Lead.status == LeadStatus.DRAFT)
-            .order_by(Lead.id.desc())
-            .limit(1)
-        )
+    async def get_latest(self, user_id: int) -> Lead | None:
+        """The user's current dialog: the newest lead in any status."""
+        stmt = select(Lead).where(Lead.user_id == user_id).order_by(Lead.id.desc()).limit(1)
         return (await self._session.scalars(stmt)).first()
 
 

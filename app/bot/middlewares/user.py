@@ -6,7 +6,7 @@ from aiogram.types import TelegramObject
 from aiogram.types import User as TgUser
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.repositories import UserRepository
+from app.db.repositories import UnitOfWork, UserRepository
 from app.services.users import UserService
 
 # Any: aiogram middleware contract (handler data dict and result are untyped by design).
@@ -23,6 +23,6 @@ class UserMiddleware(BaseMiddleware):
         tg_user = data.get("event_from_user")
         session = data.get("session")
         if isinstance(tg_user, TgUser) and isinstance(session, AsyncSession):
-            service = UserService(UserRepository(session))
+            service = UserService(UserRepository(session), UnitOfWork(session))
             data["user"] = await service.register(tg_user.id, tg_user.username)
         return await handler(event, data)

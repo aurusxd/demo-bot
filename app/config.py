@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     crm_webhook_url: str | None = None
     database_url: str = "sqlite+aiosqlite:///data/app.db"
     tryon_daily_limit: int = 5
+    throttle_max_messages: int = 10
+    throttle_window_s: float = 60.0
     log_level: str = "INFO"
 
     @field_validator("admin_ids", mode="before")

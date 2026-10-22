@@ -6,7 +6,7 @@ from aiogram.types import TelegramObject
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.base import LLMClient
-from app.db.repositories import LeadRepository, MessageRepository
+from app.db.repositories import LeadRepository, MessageRepository, UnitOfWork
 from app.services.qualification import QualificationService
 
 # Any: aiogram middleware contract (handler data dict and result are untyped by design).
@@ -26,6 +26,6 @@ class ServicesMiddleware(BaseMiddleware):
         session = data.get("session")
         if isinstance(session, AsyncSession):
             data["qualification"] = QualificationService(
-                self._llm, LeadRepository(session), MessageRepository(session)
+                self._llm, LeadRepository(session), MessageRepository(session), UnitOfWork(session)
             )
         return await handler(event, data)

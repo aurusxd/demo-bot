@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.middlewares.user import UserMiddleware
 from app.db.models import User
-from app.db.repositories import UserRepository
+from app.db.repositories import UnitOfWork, UserRepository
 from app.services.users import UserService
 
 
@@ -16,7 +16,7 @@ async def count_users(session: AsyncSession) -> int:
 
 
 async def test_register_creates_user(session: AsyncSession) -> None:
-    user = await UserService(UserRepository(session)).register(100, "alice")
+    user = await UserService(UserRepository(session), UnitOfWork(session)).register(100, "alice")
 
     assert user.id is not None
     assert user.tg_id == 100
@@ -25,7 +25,7 @@ async def test_register_creates_user(session: AsyncSession) -> None:
 
 
 async def test_register_is_idempotent_and_updates_username(session: AsyncSession) -> None:
-    service = UserService(UserRepository(session))
+    service = UserService(UserRepository(session), UnitOfWork(session))
 
     first = await service.register(100, "alice")
     second = await service.register(100, "alice_new")
@@ -36,7 +36,7 @@ async def test_register_is_idempotent_and_updates_username(session: AsyncSession
 
 
 async def test_register_without_username(session: AsyncSession) -> None:
-    user = await UserService(UserRepository(session)).register(200, None)
+    user = await UserService(UserRepository(session), UnitOfWork(session)).register(200, None)
 
     assert user.username is None
 
