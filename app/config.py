@@ -14,6 +14,8 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         env_ignore_empty=True,
         extra="ignore",
+        # Validation errors must not echo env values: the input dict holds every secret.
+        hide_input_in_errors=True,
     )
 
     bot_token: SecretStr

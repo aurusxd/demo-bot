@@ -13,7 +13,7 @@ from loguru import logger
 from app.bot import texts
 from app.bot.handlers.start import DELETE_ME_COMMAND
 from app.config import get_settings
-from app.logging_setup import setup_logging
+from app.logging_setup import setup_logging, setup_startup_logging
 
 
 async def apply_profile(bot: Bot) -> None:
@@ -43,5 +43,6 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    setup_startup_logging()
     with logger.catch(reraise=True):
         asyncio.run(main())

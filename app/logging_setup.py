@@ -80,9 +80,7 @@ class _InterceptHandler(logging.Handler):
         logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
 
-def setup_logging(level: str, secrets: Iterable[str], log_file: Path | None = LOG_FILE) -> None:
-    sanitize = Sanitizer(secrets)
-
+def _reset(sanitize: Sanitizer) -> None:
     def patch(record: "Record") -> None:
         record["message"] = sanitize(record["message"])
         for key, value in record["extra"].items():
@@ -91,6 +89,20 @@ def setup_logging(level: str, secrets: Iterable[str], log_file: Path | None = LO
 
     logger.remove()
     logger.configure(patcher=patch)
+
+
+def setup_startup_logging() -> None:
+    """Safe logging until settings are loaded (secrets unknown yet).
+
+    loguru's default sink has diagnose=True: a startup traceback (bad .env) would dump local
+    variables, i.e. the raw env with every token and key. Tokens are masked by pattern only.
+    """
+    _reset(Sanitizer(()))
+    logger.add(sys.stderr, format=STDOUT_FORMAT, diagnose=False, backtrace=False)
+
+
+def setup_logging(level: str, secrets: Iterable[str], log_file: Path | None = LOG_FILE) -> None:
+    _reset(Sanitizer(secrets))
     # diagnose=False: never dump local variable values (may contain secrets/PII) in tracebacks.
     logger.add(sys.stdout, level=level, format=STDOUT_FORMAT, diagnose=False, backtrace=False)
     if log_file is not None:

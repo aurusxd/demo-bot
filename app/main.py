@@ -26,7 +26,7 @@ from app.config import Settings, get_settings
 from app.core.locks import UserLocks
 from app.db.base import create_engine, create_session_factory
 from app.db.repositories import CatalogRepository, UnitOfWork
-from app.logging_setup import setup_logging
+from app.logging_setup import setup_logging, setup_startup_logging
 from app.services.catalog import CatalogService, load_catalog
 from app.services.estimate import EstimateService, load_pricing
 from app.services.leads import LeadServiceFactory
@@ -176,6 +176,7 @@ def _exit_with_error(_: BaseException) -> None:
 
 
 if __name__ == "__main__":
-    # Fatal startup errors (bad token, network) go through loguru, i.e. sanitized.
+    # Fatal startup errors (bad .env, token, network) go through loguru, i.e. sanitized.
+    setup_startup_logging()
     with logger.catch(onerror=_exit_with_error):
         asyncio.run(main())

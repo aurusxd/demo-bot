@@ -7,7 +7,7 @@ from aiogram.types import Update
 from loguru import logger
 
 from app.bot.middlewares.logging import _describe  # pyright: ignore[reportPrivateUsage]
-from app.logging_setup import Sanitizer, mask_phone, setup_logging
+from app.logging_setup import Sanitizer, mask_phone, setup_logging, setup_startup_logging
 from tests.fakes import photo_update, text_update, voice_update
 
 SECRET = "sk-super-secret-key-123"
@@ -61,6 +61,33 @@ def test_setup_logging_writes_sanitized_json(tmp_path: Path) -> None:
     assert "stdlib phone +7***1234" in messages
     assert all(SECRET not in m for m in messages)
     assert any(r["extra"].get("tg_id") == 42 for r in records)
+
+
+def test_startup_logging_never_dumps_local_variables(capsys: pytest.CaptureFixture[str]) -> None:
+    setup_startup_logging()
+
+    def load_env() -> None:
+        env = {"deepseek_api_key": SECRET}  # diagnose would print it on the raise line
+        raise RuntimeError(f"bad env: {len(env)} keys")
+
+    with logger.catch():
+        load_env()
+    logger.remove()
+
+    err = capsys.readouterr().err
+    assert "RuntimeError" in err
+    assert SECRET not in err
+
+
+def test_startup_logging_masks_bot_tokens(capsys: pytest.CaptureFixture[str]) -> None:
+    setup_startup_logging()
+
+    logger.info("starting with {}", BOT_TOKEN)
+    logger.remove()
+
+    err = capsys.readouterr().err
+    assert BOT_TOKEN not in err
+    assert "starting with ***" in err
 
 
 @pytest.mark.parametrize(

@@ -83,3 +83,15 @@ def test_crm_webhook_url_is_masked_as_secret(monkeypatch: pytest.MonkeyPatch) ->
     assert settings.secret_values()[-1] == url
     assert "hook-key" not in repr(settings)
     assert "sk-deep" not in repr(settings)
+
+
+def test_validation_error_does_not_echo_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    token = "123456:" + "T" * 35
+    monkeypatch.delenv("POLZA_IMAGE_MODEL", raising=False)
+    with pytest.raises(ValidationError) as exc_info:
+        make_settings(monkeypatch, BOT_TOKEN=token, POLZA_IMAGE_MODEL="")
+
+    error = str(exc_info.value)
+    assert "polza_image_model" in error
+    for secret in (token[:10], "sk-test-key", "pk-test-key"):
+        assert secret not in error
