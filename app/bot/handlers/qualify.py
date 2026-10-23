@@ -35,14 +35,16 @@ async def run_dialog_turn(
     # LLM output is plain text: never parse it as HTML. On qualification the LLM itself
     # thanks the client and recaps the order, so no robotic summary is sent here.
     await message.answer(result.reply or texts.QUALIFY_FALLBACK, parse_mode=None)
+    if result.lead_id is not None and result.qualified:
+        estimate = await leads.estimate(result.lead_id)
+        await message.answer(_estimate_text(estimate))
     if result.catalog is not None:
+        # Never raises: a failed card must not cost the lead its delivery below.
         await show_catalog(message, catalog, result.catalog)
     if result.lead_id is None:
         return
+    # Slow CRM/manager delivery goes last: the client already has every answer.
     if result.qualified:
-        # The client gets the estimate first; slow CRM/manager delivery happens after it.
-        estimate = await leads.estimate(result.lead_id)
-        await message.answer(_estimate_text(estimate))
         await leads.submit(result.lead_id)
     elif result.changed_slots:
         await leads.send_update(result.lead_id, result.changed_slots)

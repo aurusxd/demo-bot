@@ -1,3 +1,4 @@
+import contextlib
 import html
 from collections.abc import Awaitable, Callable
 
@@ -15,18 +16,25 @@ from loguru import logger
 
 from app.bot import texts
 from app.bot.keyboards import CATALOG_NOOP, CatalogPage, catalog_keyboard
+from app.clients.telegram import TELEGRAM_ERRORS
 from app.db.models import CatalogCategory
 from app.services.catalog import CatalogCard, CatalogService
 
 # Sends or edits one card with the given photo (cached file_id or a file upload).
 PhotoSender = Callable[[str | InputFile], Awaitable[Message | bool]]
 _NOT_MODIFIED = "message is not modified"
+# A card can fail on the Bot API or on reading the image from disk (OSError).
+CARD_ERRORS = (*TELEGRAM_ERRORS, OSError)
 
 
 async def show_catalog(
     message: Message, catalog: CatalogService, category: CatalogCategory
 ) -> None:
-    """First card of a category as a new message: the entry point from the dialog."""
+    """First card of a category as a new message: the entry point from the dialog.
+
+    Failures are logged and reported to the client, never raised: the dialog turn goes on
+    to deliver the lead after this card.
+    """
     card = await catalog.get_card(category, 0)
     if card is None:
         await message.answer(texts.CATALOG_EMPTY)
@@ -37,7 +45,12 @@ async def show_catalog(
             photo, caption=_caption(card), reply_markup=_keyboard(card)
         )
 
-    await _deliver(card, catalog, send)
+    try:
+        await _deliver(card, catalog, send)
+    except CARD_ERRORS:
+        logger.exception("catalog card failed item_id={}", card.item_id)
+        with contextlib.suppress(*TELEGRAM_ERRORS):
+            await message.answer(texts.CATALOG_FAILED)
 
 
 async def catalog_page(

@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///data/app.db"
     tryon_daily_limit: int = 5
     throttle_max_messages: int = 10
+    throttle_max_callbacks: int = 60  # button presses: no LLM, own limit
     throttle_window_s: float = 60.0
     log_level: str = "INFO"
 

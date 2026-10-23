@@ -15,7 +15,8 @@ from app.core.errors import ExternalServiceError
 SERVICE = "telegram"
 DOWNLOAD_TIMEOUT_S = 30
 MAX_ALBUM_SIZE = 10  # Telegram limit for sendMediaGroup
-_TELEGRAM_ERRORS = (TelegramAPIError, aiohttp.ClientError, TimeoutError)
+# Everything a Bot API call can raise on API or transport failure.
+TELEGRAM_ERRORS = (TelegramAPIError, aiohttp.ClientError, TimeoutError)
 
 
 @contextmanager
@@ -24,7 +25,7 @@ def _telegram_call(action: str) -> Generator[None]:
     started = time.perf_counter()
     try:
         yield
-    except _TELEGRAM_ERRORS as exc:
+    except TELEGRAM_ERRORS as exc:
         # The exception text may contain a file URL with the bot token: log the type only.
         logger.warning(
             "telegram call action={} failed error={} latency_ms={}",

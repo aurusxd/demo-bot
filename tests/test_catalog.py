@@ -29,7 +29,9 @@ from app.schemas.qualification import LLMReply
 from app.services.catalog import CatalogService, load_catalog
 from tests.fakes import (
     BOT_TOKEN,
+    FakeCrmClient,
     FakeLLMClient,
+    FakeNotifier,
     callback_update,
     image_bytes,
     make_dispatcher,
@@ -60,8 +62,8 @@ def catalog_service(session: AsyncSession, images_dir: Path = Path("cat")) -> Ca
     return CatalogService(CatalogRepository(session), UnitOfWork(session), images_dir)
 
 
-def llm_catalog_json(reply: str, catalog: str | None) -> str:
-    return json.dumps({"reply": reply, "slots": {}, "ready": False, "catalog": catalog})
+def llm_catalog_json(reply: str, catalog: str | None, ready: bool = False, **slots: object) -> str:
+    return json.dumps({"reply": reply, "slots": slots, "ready": ready, "catalog": catalog})
 
 
 # --- yaml and seed ---
@@ -385,3 +387,39 @@ async def test_noop_and_forged_callbacks(
 
     assert len(telegram.of(AnswerCallbackQuery)) == 1
     assert telegram.of(EditMessageMedia) == []
+
+
+async def test_failed_card_does_not_block_lead_delivery(
+    session_factory: async_sessionmaker[AsyncSession], seeded: Path, telegram: FakeTelegram
+) -> None:
+    telegram.fail_uploads = True
+    llm = FakeLLMClient(
+        llm_catalog_json(
+            "Спасибо! Вот примеры",
+            "kitchen",
+            ready=True,
+            furniture_type="kitchen",
+            dimensions="3 м",
+            length_m=3,
+            phone="89123451234",
+        )
+    )
+    crm, notifier = FakeCrmClient(), FakeNotifier()
+    dp = make_dispatcher(
+        session_factory,
+        llm,
+        settings=make_settings(catalog_path=seeded),
+        crm=crm,
+        notifier=notifier,
+    )
+
+    await dp.feed_update(Bot(token=BOT_TOKEN), text_update(1, "Кухня 3 м, 89123451234"))
+
+    replies = [m.text for m in telegram.of(SendMessage)]
+    estimate = texts.ESTIMATE_RANGE.format(
+        min_price=texts.format_price(115000, "₽"), max_price=texts.format_price(155000, "₽")
+    )
+    # Thank-you, then the estimate, then the card (failed here); never the generic error.
+    assert replies == ["Спасибо! Вот примеры", estimate, texts.CATALOG_FAILED]
+    assert len(crm.sent) == 1
+    assert len(notifier.cards) == 1

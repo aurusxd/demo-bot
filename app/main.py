@@ -47,7 +47,11 @@ def build_dispatcher(
     # Order matters: throttle and serialize per user *before* opening a DB session.
     dp.update.outer_middleware(UpdateLoggingMiddleware())
     dp.update.outer_middleware(
-        ThrottlingMiddleware(settings.throttle_max_messages, settings.throttle_window_s)
+        ThrottlingMiddleware(
+            settings.throttle_max_messages,
+            settings.throttle_window_s,
+            settings.throttle_max_callbacks,
+        )
     )
     dp.update.outer_middleware(UserLockMiddleware(locks or UserLocks()))
     dp.update.outer_middleware(DbSessionMiddleware(session_factory))
