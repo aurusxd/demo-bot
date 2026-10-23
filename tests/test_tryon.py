@@ -442,3 +442,51 @@ async def test_more_button_sends_a_new_catalog_card(
     (card,) = telegram.of(SendPhoto)
     assert card.caption.startswith("<b>Сканди</b>")
     assert card.reply_markup.inline_keyboard[0][0].callback_data == TryOnStart(item_id=2).pack()
+
+
+async def test_album_uses_only_its_first_photo(
+    session_factory: async_sessionmaker[AsyncSession], catalog_yaml: Path, telegram: FakeTelegram
+) -> None:
+    image_gen = FakeImageGenClient(RESULT)
+    dp = make_dispatcher(
+        session_factory,
+        FakeLLMClient(),
+        settings=make_settings(catalog_path=catalog_yaml),
+        image_gen=image_gen,
+        downloader=FakeDownloader({"a": ROOM, "b": ROOM, "c": ROOM, "next": image_bytes()}),
+    )
+    bot = Bot(token=BOT_TOKEN)
+
+    await dp.feed_update(bot, press_tryon(1))
+    for update_id, file_id in enumerate(("a", "b", "c"), start=2):
+        await dp.feed_update(bot, photo_update(update_id, file_id, media_group_id="album"))
+    await dp.feed_update(bot, photo_update(9, "next", media_group_id="other"))
+
+    assert len(image_gen.calls) == 1  # one paid generation per album
+    assert len(telegram.of(SendPhoto)) == 1
+    # The rest of the try-on album is neither acknowledged nor attached to the lead;
+    # a later album is a lead photo again.
+    assert telegram.texts().count(texts.PHOTO_RECEIVED) == 1
+    assert await lead_photo_ids(session_factory) == ["next"]
+
+
+async def test_album_with_failed_generation_is_not_retried_per_photo(
+    session_factory: async_sessionmaker[AsyncSession], catalog_yaml: Path, telegram: FakeTelegram
+) -> None:
+    image_gen = FakeImageGenClient(ExternalServiceError("polza", "HTTP 502", 502))
+    dp = make_dispatcher(
+        session_factory,
+        FakeLLMClient(),
+        settings=make_settings(catalog_path=catalog_yaml),
+        image_gen=image_gen,
+        downloader=FakeDownloader({"a": ROOM, "b": ROOM}),
+    )
+    bot = Bot(token=BOT_TOKEN)
+
+    await dp.feed_update(bot, press_tryon(1))
+    await dp.feed_update(bot, photo_update(2, "a", media_group_id="album"))
+    await dp.feed_update(bot, photo_update(3, "b", media_group_id="album"))
+
+    assert len(image_gen.calls) == 1
+    assert telegram.texts().count(texts.TRYON_FAILED) == 1
+    assert await lead_photo_ids(session_factory) == []

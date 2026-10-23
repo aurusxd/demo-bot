@@ -10,6 +10,7 @@ from loguru import logger
 from app.clients.base import HttpClient
 from app.clients.polza import IMAGE_TIMEOUT_S, STT_TIMEOUT_S, PolzaImageClient, PolzaSpeechClient
 from app.core.errors import ExternalServiceError
+from tests.fakes import image_bytes
 
 BASE_URL = "https://polza.test/api/v1"
 URL = f"{BASE_URL}/audio/transcriptions"
@@ -96,7 +97,7 @@ async def test_production_client_retries_once_with_timeout(
 
 MEDIA_URL = f"{BASE_URL}/media"
 RESULT_URL = "https://cdn.polza.test/f/1/result.jpg"
-ROOM, REFERENCE, RESULT = b"room-jpeg", b"reference-jpeg", b"result-jpeg"
+ROOM, REFERENCE, RESULT = b"room-jpeg", b"reference-jpeg", image_bytes("JPEG")
 
 
 def make_image_client(provider: str | None = "mie") -> PolzaImageClient:
@@ -207,4 +208,48 @@ async def test_result_url_is_not_logged() -> None:
 
     assert any("<result url>" in line for line in lines)
     assert all(RESULT_URL not in line for line in lines)
+    await client.close()
+
+
+@respx.mock
+async def test_image_read_timeout_is_not_retried() -> None:
+    # The generation may still be running (and billed): a second POST would pay twice.
+    route = respx.post(MEDIA_URL).mock(side_effect=httpx.ReadTimeout("slow"))
+    client = make_image_client()
+
+    with pytest.raises(ExternalServiceError):
+        await client.edit(ROOM, REFERENCE, "p")
+
+    assert route.call_count == 1
+    await client.close()
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "content",
+    [b"", b"<html>Error</html>", image_bytes("GIF"), image_bytes("JPEG")[:40]],
+)
+async def test_broken_result_is_rejected(content: bytes) -> None:
+    respx.post(MEDIA_URL).mock(
+        return_value=httpx.Response(200, json=media("completed", [{"url": RESULT_URL}]))
+    )
+    respx.get(RESULT_URL).mock(return_value=httpx.Response(200, content=content))
+    client = make_image_client()
+
+    with pytest.raises(ExternalServiceError):
+        await client.edit(ROOM, REFERENCE, "p")
+    await client.close()
+
+
+@respx.mock
+async def test_oversized_result_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.clients.polza.IMAGE_MAX_BYTES", len(RESULT) - 1)
+    respx.post(MEDIA_URL).mock(
+        return_value=httpx.Response(200, json=media("completed", [{"url": RESULT_URL}]))
+    )
+    respx.get(RESULT_URL).mock(return_value=httpx.Response(200, content=RESULT))
+    client = make_image_client()
+
+    with pytest.raises(ExternalServiceError):
+        await client.edit(ROOM, REFERENCE, "p")
     await client.close()

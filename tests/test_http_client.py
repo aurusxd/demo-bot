@@ -74,3 +74,38 @@ async def test_timeout_retried_then_raises() -> None:
 
     assert route.call_count == 2
     await client.close()
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "outcome",
+    [httpx.ReadTimeout("slow"), httpx.Response(500), httpx.Response(502), httpx.Response(504)],
+)
+async def test_non_idempotent_is_not_retried_when_work_may_be_running(
+    outcome: httpx.Response | Exception,
+) -> None:
+    route = respx.post(f"{BASE_URL}/paid").mock(side_effect=[outcome, httpx.Response(200)])
+    client = make_client()
+
+    with pytest.raises(ExternalServiceError):
+        await client.request("POST", "/paid", idempotent=False)
+
+    assert route.call_count == 1  # a retry could pay for the work twice
+    await client.close()
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "outcome", [httpx.ConnectError("refused"), httpx.Response(429), httpx.Response(503)]
+)
+async def test_non_idempotent_is_retried_when_not_started(
+    outcome: httpx.Response | Exception,
+) -> None:
+    route = respx.post(f"{BASE_URL}/paid").mock(side_effect=[outcome, httpx.Response(200)])
+    client = make_client()
+
+    response = await client.request("POST", "/paid", idempotent=False)
+
+    assert response.status_code == 200
+    assert route.call_count == 2
+    await client.close()

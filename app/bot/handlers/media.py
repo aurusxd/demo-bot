@@ -28,6 +28,9 @@ class MediaGroupTracker:
         self._seen: OrderedDict[str, None] = OrderedDict()
         self._max_size = max_size
 
+    def seen(self, media_group_id: str | None) -> bool:
+        return media_group_id is not None and media_group_id in self._seen
+
     def first_seen(self, media_group_id: str | None) -> bool:
         if media_group_id is None:
             return True

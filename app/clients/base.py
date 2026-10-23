@@ -14,6 +14,11 @@ DEFAULT_TIMEOUT_S = 30.0
 DEFAULT_MAX_RETRIES = 2
 DEFAULT_BACKOFF_S = 1.0
 RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
+# A non-idempotent (paid) request is retried only when the server surely did not start it:
+# the connection never opened, or the server explicitly refused (rate limit, unavailable).
+# A read timeout or a 500/502/504 may mean the work is still running: a retry would pay twice.
+NOT_STARTED_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
+NOT_STARTED_STATUSES = frozenset({429, 503})
 
 # Multipart file: (filename, content, content_type).
 FileField = tuple[str, bytes, str]
@@ -102,9 +107,15 @@ class HttpClient:
         files: Mapping[str, FileField] | None = None,
         timeout_s: float | None = None,
         log_path: str | None = None,
+        idempotent: bool = True,
     ) -> httpx.Response:
-        """`log_path` replaces `path` in logs: for URLs that grant access (signed, file links)."""
+        """`log_path` replaces `path` in logs: for URLs that grant access (signed, file links).
+
+        `idempotent=False` (e.g. a paid generation): retry only failures where the request
+        surely was not processed, see NOT_STARTED_ERRORS / NOT_STARTED_STATUSES.
+        """
         attempts = self._max_retries + 1
+        retry_statuses = RETRYABLE_STATUSES if idempotent else NOT_STARTED_STATUSES
         logged_path = log_path or path
         timeout = timeout_s if timeout_s is not None else httpx.USE_CLIENT_DEFAULT
         for attempt in range(1, attempts + 1):
@@ -115,13 +126,14 @@ class HttpClient:
                 )
             except httpx.TransportError as exc:
                 self._log_failure(method, logged_path, attempt, started, type(exc).__name__)
-                if attempt == attempts:
+                retryable = idempotent or isinstance(exc, NOT_STARTED_ERRORS)
+                if attempt == attempts or not retryable:
                     raise ExternalServiceError(self._service, type(exc).__name__) from exc
                 await self._sleep_before_retry(attempt)
                 continue
 
             self._log_response(method, logged_path, attempt, started, response)
-            if response.status_code in RETRYABLE_STATUSES and attempt < attempts:
+            if response.status_code in retry_statuses and attempt < attempts:
                 await self._sleep_before_retry(attempt)
                 continue
             if response.is_error:

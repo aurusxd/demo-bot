@@ -1,8 +1,10 @@
 import asyncio
 import base64
+import io
 import time
 
 from loguru import logger
+from PIL import Image
 from pydantic import BaseModel, ValidationError
 
 from app.clients.base import HttpClient
@@ -26,6 +28,8 @@ IMAGE_POLL_MAX_S = 120.0  # safety cap; the caller's budget is normally shorter
 IMAGE_DOWNLOAD_TIMEOUT_S = 30.0
 IMAGE_MIME = "image/jpeg"
 IMAGE_OUTPUT_FORMAT = "jpeg"
+IMAGE_MAX_BYTES = 10 * 1024 * 1024  # Telegram's limit for sendPhoto
+RESULT_FORMATS = frozenset({"JPEG", "PNG", "WEBP"})
 PENDING_STATUSES = frozenset({"pending", "processing"})
 COMPLETED_STATUS = "completed"
 
@@ -150,15 +154,17 @@ class PolzaImageClient:
             raise ExternalServiceError(SERVICE, f"image {generation.status} code={error.code}")
         # The URL opens the client's photo: never logged.
         response = await self._files.request("GET", url, log_path="<result url>")
-        if not response.content:
-            raise ExternalServiceError(SERVICE, "empty image")
+        image = response.content
+        # A CDN error page with 200 would fail only at Telegram, with the generation counted.
+        image_format = await asyncio.to_thread(_check_result, image)
         logger.info(
-            "polza image done generation_id={} latency_ms={} bytes={}",
+            "polza image done generation_id={} latency_ms={} bytes={} format={}",
             generation.id,
             round((time.perf_counter() - started) * 1000),
-            len(response.content),
+            len(image),
+            image_format,
         )
-        return response.content
+        return image
 
     async def close(self) -> None:
         await self._http.close()
@@ -177,7 +183,8 @@ class PolzaImageClient:
         }
         if self._provider:
             payload["provider"] = {"only": [self._provider]}
-        response = await self._http.request("POST", MEDIA_PATH, json=payload)
+        # Paid and not idempotent: after a read timeout the generation may still be running.
+        response = await self._http.request("POST", MEDIA_PATH, json=payload, idempotent=False)
         generation = _parse_media(response.content)
         logger.info(
             "polza image created generation_id={} status={}", generation.id, generation.status
@@ -197,6 +204,24 @@ class PolzaImageClient:
 def _image_item(image: bytes) -> dict[str, str]:
     encoded = base64.b64encode(image).decode("ascii")
     return {"type": "base64", "data": f"data:{IMAGE_MIME};base64,{encoded}"}
+
+
+def _check_result(image: bytes) -> str:
+    """Blocking (Pillow): run in a worker thread. The result must be a sendable photo."""
+    if not image or len(image) > IMAGE_MAX_BYTES:
+        logger.warning("polza image rejected bytes={}", len(image))
+        raise ExternalServiceError(SERVICE, f"bad image size {len(image)}")
+    try:
+        with Image.open(io.BytesIO(image)) as opened:
+            image_format = opened.format
+            opened.verify()
+    except (OSError, SyntaxError, ValueError, Image.DecompressionBombError) as exc:
+        logger.warning("polza image rejected error={}", type(exc).__name__)
+        raise ExternalServiceError(SERVICE, f"bad image {type(exc).__name__}") from exc
+    if image_format not in RESULT_FORMATS:
+        logger.warning("polza image rejected format={}", image_format)
+        raise ExternalServiceError(SERVICE, f"bad image format {image_format}")
+    return image_format
 
 
 def _parse_media(content: bytes) -> _MediaResponse:

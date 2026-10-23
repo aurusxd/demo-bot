@@ -10,6 +10,7 @@ from loguru import logger
 
 from app.bot import texts
 from app.bot.handlers.catalog import show_catalog
+from app.bot.handlers.media import MediaGroupTracker
 from app.bot.handlers.qualify import run_dialog_turn
 from app.bot.keyboards import TryOnLead, TryOnMore, TryOnStart, tryon_result_keyboard
 from app.bot.states import TryOn
@@ -71,10 +72,15 @@ async def tryon_photo(
     media: MediaService,
     tryon: TryOnService,
     settings: Settings,
+    tryon_albums: MediaGroupTracker,
 ) -> None:
-    """The room photo: generate and send the try-on. On failure the state stays: resend."""
+    """The room photo: generate and send the try-on. On failure the state stays: resend.
+
+    From an album only the first photo is used: one paid generation per album.
+    """
     assert message.photo  # guaranteed by the F.photo filter
     photo = message.photo[-1]  # the largest size
+    tryon_albums.first_seen(message.media_group_id)
     item_id = int((await state.get_data())[ITEM_ID_KEY])
     try:
         room = await media.prepare_tryon_photo(PhotoInput(photo.file_id, photo.file_size))
@@ -106,6 +112,14 @@ async def tryon_photo(
         caption=texts.TRYON_RESULT_CAPTION.format(title=html.escape(result.item.title)),
         reply_markup=tryon_result_keyboard(result.item.category, result.item.item_id),
     )
+
+
+async def tryon_album_rest(message: Message, tryon_albums: MediaGroupTracker) -> None:
+    """Other photos of an album whose first photo went to the try-on: skipped, not attached
+    to the lead and not generated again (also after the try-on has left its state)."""
+    if not tryon_albums.seen(message.media_group_id):
+        raise SkipHandler
+    logger.info("tryon album photo skipped")
 
 
 async def tryon_cancel(message: Message, state: FSMContext) -> None:
@@ -174,6 +188,7 @@ def create_router() -> Router:
     router.callback_query.register(tryon_start, TryOnStart.filter())
     router.callback_query.register(tryon_more, TryOnMore.filter())
     router.callback_query.register(tryon_lead, TryOnLead.filter())
+    router.message.register(tryon_album_rest, F.photo, F.media_group_id)
     router.message.register(tryon_photo, TryOn.waiting_photo, F.photo)
     router.message.register(tryon_cancel, TryOn.waiting_photo)
     return router

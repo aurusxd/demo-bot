@@ -45,7 +45,11 @@ def build_dispatcher(
     locks: UserLocks | None = None,
 ) -> Dispatcher:
     """Manual DI container: wires middlewares, routers and shared dependencies."""
-    dp = Dispatcher(settings=settings, media_groups=MediaGroupTracker())
+    # media_groups: albums already acknowledged; tryon_albums: albums whose first photo
+    # went to the try-on (the rest of such an album is skipped).
+    dp = Dispatcher(
+        settings=settings, media_groups=MediaGroupTracker(), tryon_albums=MediaGroupTracker()
+    )
     # Order matters: throttle and serialize per user *before* opening a DB session.
     dp.update.outer_middleware(UpdateLoggingMiddleware())
     dp.update.outer_middleware(
