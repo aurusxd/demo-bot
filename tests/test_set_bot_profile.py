@@ -17,7 +17,7 @@ async def test_apply_profile_sets_descriptions_and_commands() -> None:
         short_description=texts.BOT_SHORT_DESCRIPTION
     )
     commands = bot.set_my_commands.await_args.args[0]
-    assert [c.command for c in commands] == ["start"]
+    assert [c.command for c in commands] == ["start", "delete_me"]
 
 
 async def test_apply_profile_propagates_api_error() -> None:

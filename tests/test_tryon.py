@@ -490,3 +490,24 @@ async def test_album_with_failed_generation_is_not_retried_per_photo(
     assert len(image_gen.calls) == 1
     assert telegram.texts().count(texts.TRYON_FAILED) == 1
     assert await lead_photo_ids(session_factory) == []
+
+
+async def test_delete_me_drops_a_pending_tryon(
+    session_factory: async_sessionmaker[AsyncSession], catalog_yaml: Path, telegram: FakeTelegram
+) -> None:
+    image_gen = FakeImageGenClient()
+    dp = make_dispatcher(
+        session_factory,
+        FakeLLMClient(),
+        settings=make_settings(catalog_path=catalog_yaml),
+        image_gen=image_gen,
+        downloader=FakeDownloader({"room": ROOM}),
+    )
+    bot = Bot(token=BOT_TOKEN)
+
+    await dp.feed_update(bot, press_tryon(1))
+    await dp.feed_update(bot, text_update(2, "/delete_me"))
+    await dp.feed_update(bot, photo_update(3, "room"))  # no longer a try-on photo
+
+    assert telegram.texts()[1:] == [texts.DELETE_ME_DONE, texts.PHOTO_RECEIVED]
+    assert image_gen.calls == []

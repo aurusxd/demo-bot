@@ -14,7 +14,8 @@ Handler = Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]]
 
 
 class UserMiddleware(BaseMiddleware):
-    """Registers the sender in DB and exposes it to handlers as data["user"].
+    """Registers the sender in DB and exposes it to handlers as data["user"]
+    (and the service as data["users"]).
 
     Must run after DbSessionMiddleware (needs data["session"]).
     """
@@ -25,4 +26,5 @@ class UserMiddleware(BaseMiddleware):
         if isinstance(tg_user, TgUser) and isinstance(session, AsyncSession):
             service = UserService(UserRepository(session), UnitOfWork(session))
             data["user"] = await service.register(tg_user.id, tg_user.username)
+            data["users"] = service
         return await handler(event, data)

@@ -13,7 +13,7 @@ from app.bot.handlers.errors import on_error
 from app.bot.handlers.start import cmd_start
 from app.core.errors import ExternalServiceError
 from app.db.base import create_engine, create_session_factory
-from app.db.models import Lead, LeadStatus
+from app.db.models import Lead, LeadStatus, User
 from app.db.repositories import UserRepository
 from tests.fakes import (
     BOT_TOKEN,
@@ -159,3 +159,28 @@ async def test_too_long_text_is_rejected(
 
     assert sent_texts(sent) == [texts.TEXT_TOO_LONG]
     assert llm.calls == []
+
+
+async def test_delete_me_erases_the_user_and_the_dialog_starts_over(
+    session_factory: async_sessionmaker[AsyncSession], sent: list[TelegramMethod[Any]]
+) -> None:
+    llm = FakeLLMClient(llm_json("Как вас зовут?"), llm_json("Здравствуйте!"))
+    dp = make_dispatcher(session_factory, llm)
+    bot = Bot(token=BOT_TOKEN)
+
+    await dp.feed_update(bot, text_update(1, "/start"))
+    await dp.feed_update(bot, text_update(2, "Хочу кухню, телефон 89123451234"))
+    await dp.feed_update(bot, text_update(3, "/delete_me"))
+
+    assert sent_texts(sent)[-1] == texts.DELETE_ME_DONE
+    async with session_factory() as session:
+        assert (await session.scalars(select(User))).all() == []
+        assert (await session.scalars(select(Lead))).all() == []
+
+    await dp.feed_update(bot, text_update(4, "Привет"))
+
+    # A fresh user and lead: the LLM sees nothing of the erased dialog.
+    history = [m.content for m in llm.calls[1]]
+    assert not any("89123451234" in content for content in history)
+    async with session_factory() as session:
+        assert len((await session.scalars(select(Lead))).all()) == 1

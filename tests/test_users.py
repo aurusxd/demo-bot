@@ -6,13 +6,46 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.middlewares.user import UserMiddleware
-from app.db.models import User
+from app.db.base import Base
+from app.db.models import (
+    CatalogCategory,
+    CatalogItem,
+    Lead,
+    LeadMedia,
+    MediaKind,
+    Message,
+    MessageKind,
+    MessageRole,
+    TryOnRequest,
+    User,
+)
 from app.db.repositories import UnitOfWork, UserRepository
 from app.services.users import UserService
 
 
+async def count_rows(session: AsyncSession, model: type[Base]) -> int:
+    return (await session.execute(select(func.count()).select_from(model))).scalar_one()
+
+
 async def count_users(session: AsyncSession) -> int:
-    return (await session.execute(select(func.count()).select_from(User))).scalar_one()
+    return await count_rows(session, User)
+
+
+async def add_user_with_data(session: AsyncSession, tg_id: int, item: CatalogItem) -> User:
+    """A user with a lead, a message, a lead photo and a try-on request."""
+    user = await UserService(UserRepository(session), UnitOfWork(session)).register(tg_id, None)
+    lead = Lead(user_id=user.id, phone="+79123451234")
+    session.add(lead)
+    await session.flush()
+    session.add_all(
+        [
+            Message(lead_id=lead.id, role=MessageRole.USER, content="кухня", kind=MessageKind.TEXT),
+            LeadMedia(lead_id=lead.id, tg_file_id=f"photo-{tg_id}", kind=MediaKind.PHOTO),
+            TryOnRequest(user_id=user.id, catalog_item_id=item.id),
+        ]
+    )
+    await session.commit()
+    return user
 
 
 async def test_register_creates_user(session: AsyncSession) -> None:
@@ -52,6 +85,7 @@ async def test_user_middleware_puts_user_into_data(session: AsyncSession) -> Non
 
     assert result == "ok"
     assert data["user"].tg_id == 300
+    assert isinstance(data["users"], UserService)
     handler.assert_awaited_once()
 
 
@@ -63,3 +97,20 @@ async def test_user_middleware_skips_updates_without_sender(session: AsyncSessio
 
     assert "user" not in data
     assert await count_users(session) == 0
+
+
+async def test_delete_erases_user_and_all_their_data(session: AsyncSession) -> None:
+    item = CatalogItem(category=CatalogCategory.KITCHEN, title="Кухня", image_path="k/1.jpg")
+    session.add(item)
+    await session.flush()
+    doomed = await add_user_with_data(session, 100, item)
+    await add_user_with_data(session, 200, item)
+
+    await UserService(UserRepository(session), UnitOfWork(session)).delete(doomed)
+    session.expunge_all()
+
+    users = (await session.scalars(select(User))).all()
+    assert [u.tg_id for u in users] == [200]  # other users are untouched
+    for model in (Lead, Message, LeadMedia, TryOnRequest):
+        assert await count_rows(session, model) == 1
+    assert await count_rows(session, CatalogItem) == 1  # the catalog is not the user's data

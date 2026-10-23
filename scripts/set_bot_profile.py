@@ -11,6 +11,7 @@ from aiogram.types import BotCommand
 from loguru import logger
 
 from app.bot import texts
+from app.bot.handlers.start import DELETE_ME_COMMAND
 from app.config import get_settings
 from app.logging_setup import setup_logging
 
@@ -18,7 +19,12 @@ from app.logging_setup import setup_logging
 async def apply_profile(bot: Bot) -> None:
     await bot.set_my_description(description=texts.BOT_DESCRIPTION)
     await bot.set_my_short_description(short_description=texts.BOT_SHORT_DESCRIPTION)
-    await bot.set_my_commands([BotCommand(command="start", description=texts.COMMAND_START)])
+    await bot.set_my_commands(
+        [
+            BotCommand(command="start", description=texts.COMMAND_START),
+            BotCommand(command=DELETE_ME_COMMAND, description=texts.COMMAND_DELETE_ME),
+        ]
+    )
     logger.info(
         "bot profile updated description_len={} short_len={}",
         len(texts.BOT_DESCRIPTION),
