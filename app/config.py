@@ -32,6 +32,7 @@ class Settings(BaseSettings):
 
     crm_webhook_url: SecretStr | None = None  # may embed an access key (e.g. Bitrix24 webhooks)
     pricing_path: Path = Path("config/pricing.yaml")
+    catalog_path: Path = Path("assets/catalog/catalog.yaml")  # images are relative to it
     lead_retry_interval_s: float = Field(default=300.0, gt=0)  # re-delivery of stuck leads
     database_url: str = "sqlite+aiosqlite:///data/app.db"
     tryon_daily_limit: int = 5

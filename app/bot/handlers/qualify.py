@@ -3,9 +3,11 @@ from aiogram.types import Message
 from aiogram.utils.chat_action import ChatActionSender
 
 from app.bot import texts
+from app.bot.handlers.catalog import show_catalog
 from app.core.errors import InvalidInputError
 from app.db.models import MessageKind, User
 from app.schemas.estimate import EstimateResult
+from app.services.catalog import CatalogService
 from app.services.leads import LeadService
 from app.services.qualification import QualificationService
 
@@ -15,6 +17,7 @@ async def run_dialog_turn(
     user: User,
     qualification: QualificationService,
     leads: LeadService,
+    catalog: CatalogService,
     text: str,
     kind: MessageKind = MessageKind.TEXT,
     too_long_text: str = texts.TEXT_TOO_LONG,
@@ -32,6 +35,8 @@ async def run_dialog_turn(
     # LLM output is plain text: never parse it as HTML. On qualification the LLM itself
     # thanks the client and recaps the order, so no robotic summary is sent here.
     await message.answer(result.reply or texts.QUALIFY_FALLBACK, parse_mode=None)
+    if result.catalog is not None:
+        await show_catalog(message, catalog, result.catalog)
     if result.lead_id is None:
         return
     if result.qualified:
@@ -44,9 +49,13 @@ async def run_dialog_turn(
 
 
 async def dialog_message(
-    message: Message, user: User, qualification: QualificationService, leads: LeadService
+    message: Message,
+    user: User,
+    qualification: QualificationService,
+    leads: LeadService,
+    catalog: CatalogService,
 ) -> None:
-    await run_dialog_turn(message, user, qualification, leads, message.text or "")
+    await run_dialog_turn(message, user, qualification, leads, catalog, message.text or "")
 
 
 def _estimate_text(estimate: EstimateResult | None) -> str:

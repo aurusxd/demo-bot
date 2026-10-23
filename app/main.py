@@ -8,7 +8,7 @@ from aiogram.enums import ParseMode
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.bot.handlers import errors, media, qualify, start
+from app.bot.handlers import catalog, errors, media, qualify, start
 from app.bot.handlers.media import MediaGroupTracker
 from app.bot.lead_retry import LeadDeliveryRetrier
 from app.bot.middlewares.db_session import DbSessionMiddleware
@@ -25,7 +25,9 @@ from app.clients.telegram import TelegramFileDownloader, TelegramLeadNotifier
 from app.config import Settings, get_settings
 from app.core.locks import UserLocks
 from app.db.base import create_engine, create_session_factory
+from app.db.repositories import CatalogRepository, UnitOfWork
 from app.logging_setup import setup_logging
+from app.services.catalog import CatalogService, load_catalog
 from app.services.estimate import EstimateService, load_pricing
 from app.services.leads import LeadServiceFactory
 from app.services.media import MediaService
@@ -51,7 +53,9 @@ def build_dispatcher(
     dp.update.outer_middleware(DbSessionMiddleware(session_factory))
     dp.update.outer_middleware(UserMiddleware())
     dp.update.outer_middleware(
-        ServicesMiddleware(llm, MediaService(downloader, speech), lead_services)
+        ServicesMiddleware(
+            llm, MediaService(downloader, speech), lead_services, settings.catalog_path.parent
+        )
     )
     for observer in (dp.message, dp.callback_query):
         observer.middleware(HandlerLoggingMiddleware())
@@ -60,6 +64,7 @@ def build_dispatcher(
     dp.include_routers(
         errors.create_router(),
         start.create_router(),
+        catalog.create_router(),
         media.create_router(),
         qualify.create_router(),
     )
@@ -89,6 +94,7 @@ async def main() -> None:
     pricing = await asyncio.to_thread(load_pricing, settings.pricing_path)
     crm = _create_crm(settings)
     session_factory = create_session_factory(engine)
+    await _seed_catalog(settings, session_factory)
     locks = UserLocks()  # shared: handlers and the retry job never touch one user at once
     lead_services = LeadServiceFactory(
         EstimateService(pricing), crm, TelegramLeadNotifier(bot, settings.admin_chat_id)
@@ -120,6 +126,17 @@ async def main() -> None:
         await crm.close()
         await engine.dispose()
         logger.info("bot stopped")
+
+
+async def _seed_catalog(
+    settings: Settings, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    config = await asyncio.to_thread(load_catalog, settings.catalog_path)
+    async with session_factory() as session:
+        service = CatalogService(
+            CatalogRepository(session), UnitOfWork(session), settings.catalog_path.parent
+        )
+        await service.seed(config)
 
 
 def _create_crm(settings: Settings) -> LogCrmClient | WebhookCrmClient:

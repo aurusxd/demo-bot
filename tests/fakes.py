@@ -8,7 +8,7 @@ from typing import Any
 
 from aiogram import Dispatcher
 from aiogram.methods import SendMessage, TelegramMethod
-from aiogram.types import Chat, Document, Message, PhotoSize, Update, Voice
+from aiogram.types import CallbackQuery, Chat, Document, Message, PhotoSize, Update, Voice
 from aiogram.types import User as TgUser
 from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -104,6 +104,26 @@ def photo_update(
 def document_update(update_id: int, mime_type: str) -> Update:
     document = Document(file_id="doc", file_unique_id="doc", mime_type=mime_type)
     return message_update(update_id, document=document)
+
+
+def callback_update(update_id: int, data: str, user_id: int = 500) -> Update:
+    """A button press under a bot photo message (a catalog card)."""
+    card = Message(
+        message_id=update_id,
+        date=datetime.now(UTC),
+        chat=Chat(id=user_id, type="private"),
+        photo=[PhotoSize(file_id="card", file_unique_id="card", width=1280, height=850)],
+    )
+    return Update(
+        update_id=update_id,
+        callback_query=CallbackQuery(
+            id=str(update_id),
+            from_user=TgUser(id=user_id, is_bot=False, first_name="Ann", username="ann"),
+            chat_instance="ci",
+            data=data,
+            message=card,
+        ),
+    )
 
 
 def sent_texts(sent: list[TelegramMethod[Any]]) -> list[str]:

@@ -69,6 +69,23 @@ ESTIMATE_AFTER_MEASURE = (
 )
 
 
+# --- Catalog cards (caption is HTML; values are escaped by the handler) ---
+
+CATALOG_CAPTION = "<b>{title}</b>"
+CATALOG_CAPTION_STYLE = "\n🎨 {style}"
+CATALOG_PREV = "◀"
+CATALOG_NEXT = "▶"
+CATALOG_COUNTER = "{index} / {total}"
+CATALOG_CURRENT_CATEGORY = "· {label} ·"
+CATALOG_CATEGORY_LABELS = {
+    "kitchen": "🍳 Кухни",
+    "wardrobe": "🚪 Шкафы",
+    "walk_in": "👔 Гардеробные",
+    "interior": "🛋 Интерьеры",
+}
+CATALOG_EMPTY = "🖼 Примеров в этой категории пока нет — менеджер покажет их на встрече."
+
+
 def format_price(value: int, currency: str) -> str:
     """115000 -> '115 000 ₽' (narrow no-break space keeps the number on one line)."""
     return f"{value:,}".replace(",", " ") + f" {currency}"

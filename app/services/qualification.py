@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from app.clients.base import ChatMessage, LLMClient
 from app.core.errors import ExternalServiceError, InvalidInputError
 from app.db.models import (
+    CatalogCategory,
     Lead,
     LeadMedia,
     LeadStatus,
@@ -55,6 +56,7 @@ class TurnResult:
     changed_slots: tuple[str, ...] = ()  # slots whose value changed on this turn
     qualified: bool = False  # True only on the turn the lead became qualified
     slots: dict[str, str] = field(default_factory=dict[str, str])
+    catalog: CatalogCategory | None = None  # show this catalog category after the reply
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,10 +116,11 @@ class QualificationService:
                 await self._set_status(lead, LeadStatus.QUALIFIED)
             await self._uow.commit()
             logger.info(
-                "qualification turn done updated_slots={} llm_ready={} qualified={}",
+                "qualification turn done updated_slots={} llm_ready={} qualified={} catalog={}",
                 updated,
                 reply.ready,
                 qualified,
+                reply.catalog,
             )
             return TurnResult(
                 reply=reply.reply,
@@ -125,6 +128,7 @@ class QualificationService:
                 qualified=qualified,
                 changed_slots=tuple(updated),
                 slots=_lead_slots(lead),
+                catalog=reply.catalog,
             )
 
     async def attach_photo(self, user: User, tg_file_id: str, ack: str | None) -> PhotoAttached:
@@ -219,7 +223,7 @@ def _to_chat_message(message: Message) -> ChatMessage:
         # Past answers are replayed in the full JSON shape the model must return. With
         # plain-text history DeepSeek's JSON mode often returns empty content; with a
         # reply-only shape it starts omitting "slots". Known slot values are sent separately.
-        payload = {"reply": message.content, "slots": _EMPTY_SLOTS, "ready": False}
+        payload = {"reply": message.content, "slots": _EMPTY_SLOTS, "ready": False, "catalog": None}
         return ChatMessage("assistant", json.dumps(payload, ensure_ascii=False))
     return ChatMessage("user", message.content)
 

@@ -147,7 +147,8 @@ class CatalogItem(Base):
     category: Mapped[CatalogCategory] = mapped_column(_str_enum(CatalogCategory), index=True)
     title: Mapped[str] = mapped_column(String(255))
     style: Mapped[str | None] = mapped_column(String(128))
-    image_path: Mapped[str] = mapped_column(String(512))
+    # Relative to the catalog dir; the natural key of the idempotent seed.
+    image_path: Mapped[str] = mapped_column(String(512), unique=True)
     tg_file_id: Mapped[str | None] = mapped_column(String(255))
     source_url: Mapped[str | None] = mapped_column(String(1024))
 

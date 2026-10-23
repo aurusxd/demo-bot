@@ -1,9 +1,18 @@
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import Base
-from app.db.models import Lead, LeadMedia, LeadStatus, MediaKind, Message, User
+from app.db.models import (
+    CatalogCategory,
+    CatalogItem,
+    Lead,
+    LeadMedia,
+    LeadStatus,
+    MediaKind,
+    Message,
+    User,
+)
 
 
 class UnitOfWork:
@@ -108,3 +117,26 @@ class MessageRepository(BaseRepository[Message]):
             .limit(limit)
         )
         return list(reversed((await self._session.scalars(stmt)).all()))
+
+
+class CatalogRepository(BaseRepository[CatalogItem]):
+    model = CatalogItem
+
+    async def list_all(self) -> list[CatalogItem]:
+        stmt = select(CatalogItem).order_by(CatalogItem.id)
+        return list((await self._session.scalars(stmt)).all())
+
+    async def count(self, category: CatalogCategory) -> int:
+        stmt = select(func.count()).where(CatalogItem.category == category)
+        return (await self._session.execute(stmt)).scalar_one()
+
+    async def get_at(self, category: CatalogCategory, index: int) -> CatalogItem | None:
+        """The `index`-th item of a category in seed order (0-based)."""
+        stmt = (
+            select(CatalogItem)
+            .where(CatalogItem.category == category)
+            .order_by(CatalogItem.id)
+            .offset(index)
+            .limit(1)
+        )
+        return (await self._session.scalars(stmt)).first()

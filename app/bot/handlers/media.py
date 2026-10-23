@@ -9,6 +9,7 @@ from app.bot import texts
 from app.bot.handlers.qualify import run_dialog_turn
 from app.core.errors import EmptyTranscriptionError, ExternalServiceError, InvalidInputError
 from app.db.models import MessageKind, User
+from app.services.catalog import CatalogService
 from app.services.leads import LeadService
 from app.services.media import MediaService, PhotoInput, VoiceInput
 from app.services.qualification import QualificationService
@@ -44,6 +45,7 @@ async def voice_message(
     media: MediaService,
     qualification: QualificationService,
     leads: LeadService,
+    catalog: CatalogService,
 ) -> None:
     voice = message.voice
     bot = message.bot
@@ -68,6 +70,7 @@ async def voice_message(
         user,
         qualification,
         leads,
+        catalog,
         text,
         MessageKind.VOICE,
         too_long_text=texts.VOICE_TOO_LONG,
@@ -80,6 +83,7 @@ async def photo_message(
     media: MediaService,
     qualification: QualificationService,
     leads: LeadService,
+    catalog: CatalogService,
     media_groups: MediaGroupTracker,
 ) -> None:
     assert message.photo  # guaranteed by the F.photo filter
@@ -99,7 +103,7 @@ async def photo_message(
     ack = texts.PHOTO_RECEIVED if not caption and first_in_album else None
     attached = await qualification.attach_photo(user, photo.file_id, ack)
     if caption:
-        await run_dialog_turn(message, user, qualification, leads, caption)
+        await run_dialog_turn(message, user, qualification, leads, catalog, caption)
     elif ack is not None:
         await message.answer(ack)
     if attached.after_delivery:

@@ -53,6 +53,9 @@ class HandlerLoggingMiddleware(BaseMiddleware):
 
 def _describe(update: Update) -> str:
     # Never log message text itself: only its kind and length.
+    if update.callback_query is not None:
+        # Callback data is ours (e.g. "cat:kitchen:2"), not user text.
+        return f"callback_data={update.callback_query.data}"
     message = update.message
     if message is None:
         return ""

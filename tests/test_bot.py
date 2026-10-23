@@ -55,6 +55,7 @@ async def test_start_greets_starts_dialog_and_removes_old_keyboard() -> None:
 async def test_error_handler_replies_generic_message() -> None:
     update = MagicMock()
     update.message = AsyncMock()
+    update.callback_query = None
     event = ErrorEvent.model_construct(update=update, exception=RuntimeError("boom"))
 
     assert await on_error(event) is True
@@ -65,7 +66,7 @@ def test_dispatcher_builds() -> None:
     session_factory = create_session_factory(create_engine("sqlite+aiosqlite://"))
     dp = make_dispatcher(session_factory, FakeLLMClient())
 
-    assert [r.name for r in dp.sub_routers] == ["errors", "start", "media", "qualify"]
+    assert [r.name for r in dp.sub_routers] == ["errors", "start", "catalog", "media", "qualify"]
 
 
 async def test_start_update_flows_through_dispatcher(
