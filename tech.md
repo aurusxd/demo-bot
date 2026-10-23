@@ -71,7 +71,7 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 │   ├── bot/
 │   │   ├── handlers/            # start.py, qualify.py, catalog.py, tryon.py, media.py
 │   │   ├── middlewares/         # logging → throttle → user_lock → db_session → user → services (порядок важен)
-│   │   ├── keyboards.py
+│   │   ├── keyboards.py         # inline-клавиатура карточки каталога (CallbackData)
 │   │   ├── states.py            # aiogram FSM states
 │   │   └── texts.py             # ВСЕ тексты бота (шапка, сообщения)
 │   ├── services/
@@ -92,7 +92,7 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 │   │   ├── base.py              # Base, engine, session factory
 │   │   ├── models.py
 │   │   └── repositories.py
-│   ├── schemas/                 # pydantic: LeadSlots, LLMReply, EstimateResult
+│   ├── schemas/                 # pydantic: LeadSlots, LLMReply, EstimateResult, CatalogConfig
 │   ├── prompts/                 # системные промпты LLM (qualification.py)
 │   └── core/
 │       └── errors.py            # доменные исключения
@@ -121,7 +121,7 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 - `leads` — `id`, `user_id`, `status` (`draft|qualified|sent`), `name`, `furniture_type` (`kitchen|wardrobe|walk_in`), `dimensions`, `length_m`, `price_class` (`economy|standard|premium`), `style`, `budget`, `city`, `deadline`, `phone`, `comment`, `business_role`, `lead_sources` (B2B: кто посетитель и откуда у него заявки), `estimate_min`, `estimate_max`, `created_at`, `sent_at` (CRM приняла), `manager_notified_at` (карточка ушла менеджеру)
 - `messages` — `id`, `lead_id`, `role` (`user|assistant`), `content`, `kind` (`text|voice|photo`), `created_at` — история для LLM (хранить последние N)
 - `lead_media` — `id`, `lead_id`, `tg_file_id`, `kind`
-- `catalog_items` — `id`, `category` (`kitchen|wardrobe|walk_in|interior`), `title`, `style`, `image_path`, `tg_file_id` (кэш после первой отправки), `source_url`
+- `catalog_items` — `id`, `category` (`kitchen|wardrobe|walk_in|interior`), `title`, `style`, `image_path` (unique, относительно папки каталога — ключ сида), `tg_file_id` (кэш после первой отправки), `source_url`
 - `tryon_requests` — `id`, `user_id`, `catalog_item_id`, `status` (`pending|done|failed`), `latency_ms`, `error`, `created_at`
 
 Результаты генерации и фото клиентов **не храним на диске дольше обработки** (удаляем temp-файлы; в БД только `tg_file_id`).
@@ -154,7 +154,7 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 - Бот ведёт диалог как живой менеджер (без кнопок) и собирает **слоты**: имя, тип мебели, размеры/план, стиль, бюджет, город, сроки, телефон.
 - Сценарий: имя → коротко про бизнес посетителя (роль в мебельной компании, откуда заявки — слоты `business_role`, `lead_sources`, не настаивать) → «представьте, что вы клиент» → квалификация заказа. Если посетитель сразу пишет запрос на мебель — сразу квалификация.
 - Мусор, оскорбления, офтоп: без морали и без поддержки темы, возврат к демо фразой «{имя}, я здесь, чтобы помочь вам протестировать, как ИИ может работать с клиентами. Если хотите, можем продолжить демонстрацию.» На вопрос «зачем это» — объяснить, что это демонстрация.
-- Каждый ход: в DeepSeek уходит system-prompt + история (последние ~12 сообщений) + текущие слоты. Ответ — **строго JSON** (`response_format: json_object`), валидируется pydantic-схемой `LLMReply {reply: str, slots: LeadSlotsPatch, ready: bool}`.
+- Каждый ход: в DeepSeek уходит system-prompt + история (последние ~12 сообщений) + текущие слоты. Ответ — **строго JSON** (`response_format: json_object`), валидируется pydantic-схемой `LLMReply {reply: str, slots: LeadSlotsPatch, ready: bool, catalog: CatalogCategory | null}` (`catalog` — §5.6).
 - При невалидном JSON — 1 ретрай с подсказкой, затем fallback-ответ «уточните, пожалуйста…». Бот не падает.
 - Слоты мержатся в `leads` кодом, **LLM не пишет в БД напрямую**.
 - **Короткие транзакции:** перед вызовом LLM (и любого внешнего API) сервис делает `UnitOfWork.commit()` — иначе SQLite держит блокировку записи всё время ожидания и апдейты других пользователей падают с `database is locked`. Upsert пользователя коммитится сразу.
@@ -187,9 +187,13 @@ handlers (aiogram)  →  services  →  repositories  →  models (SQLAlchemy)
 - Демо: `LogCrmClient` (в лог — только id и названия заполненных полей) и `WebhookCrmClient` (POST JSON на `CRM_WEBHOOK_URL`, таймаут 15 с, 1 ретрай; URL считается секретом и маскируется в логах). Реальные CRM клиент подключит позже — через тот же `Protocol`.
 
 ### 5.6 Каталог
-- Источник: `assets/catalog/catalog.yaml` + файлы фото. Сидится в БД при старте (идемпотентно).
-- Фото берём из интернета **вручную** и кладём в репозиторий (не парсим на лету). В `source_url` пишем источник. ⚠️ Это демо — для боевого использования заменить на фото клиента/лицензионные.
-- UX: вход в каталог — из диалога (бот предлагает посмотреть примеры), постоянного меню нет. Inline-кнопки допустимы только под карточками: листание «◀ ▶» → «🏠 Попробовать у себя». `tg_file_id` кэшируем после первой отправки.
+- Источник: `assets/catalog/catalog.yaml` (путь — `CATALOG_PATH`) + файлы фото рядом (`image` — относительный путь). При старте yaml валидируется pydantic (`CatalogConfig`: категория, заголовок, путь без `..`, jpg/png/webp, без дублей) и проверяется, что все файлы есть, — иначе бот не стартует.
+- Сид при старте идемпотентный, ключ — `image_path`: новые позиции добавляются, у существующих обновляются поля (кэш `tg_file_id` сохраняется), исчезнувшие из yaml удаляются. Порядок карточек — порядок добавления (`id`). Чтобы заменить фото — новое имя файла (кэш привязан к пути).
+- Фото берём из интернета **вручную** и кладём в репозиторий (не парсим на лету). Сейчас — 24 фото с Unsplash (бесплатная лицензия), по 6 на категорию, перекодированы ≤ 1280 px без метаданных; в `source_url` — страница фото. ⚠️ Это демо — для боевого использования заменить на фото клиента/лицензионные.
+- **Вход из диалога**: в `LLMReply` поле `catalog` (`kitchen|wardrobe|walk_in|interior|null`, неизвестное значение → `null`). LLM ставит его, когда клиент просит показать примеры или соглашается на предложение (промпт: предложить один раз, когда понятен тип мебели). Код после ответа LLM шлёт первую карточку категории. Постоянного меню и команды нет.
+- **Карточка**: фото + подпись (название, стиль; HTML, значения экранируются). Inline-кнопки только под карточкой: `◀ n / N ▶` (если позиций > 1, листание по кругу) и переключатель категорий 2×2 (текущая — неактивная). Нажатия редактируют ту же карточку (`editMessageMedia`), чат не засоряется; `callback_data` = `cat:<category>:<index>`, индекс от клиента приводится по модулю.
+- **Кэш `file_id`**: первая отправка — файл с диска, `file_id` из ответа Telegram сохраняется в `catalog_items.tg_file_id`; дальше — по `file_id`. Если Telegram отверг `file_id` (сменили токен бота) — перезалив с диска и новый кэш. «message is not modified» (двойное нажатие) игнорируется. Ошибка Telegram на нажатии — alert «Что-то пошло не так».
+- Кнопка «🏠 Попробовать у себя» появится под карточкой в слайсе 6.
 - Объём для демо: ~5–8 позиций на категорию.
 
 ### 5.7 «Попробовать у себя» (главная вау-фича)
@@ -253,6 +257,7 @@ POLZA_STT_PROVIDER=openai # необязательно: provider.only для STT
 
 CRM_WEBHOOK_URL=          # пусто → LogCrmClient; маскируется в логах
 PRICING_PATH=config/pricing.yaml
+CATALOG_PATH=assets/catalog/catalog.yaml
 LEAD_RETRY_INTERVAL_S=300 # повтор доставки зависших лидов
 DATABASE_URL=sqlite+aiosqlite:///data/app.db
 TRYON_DAILY_LIMIT=5
