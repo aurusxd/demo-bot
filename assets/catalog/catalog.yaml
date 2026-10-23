@@ -1,0 +1,133 @@
+# Demo catalog: seeded into catalog_items at startup (idempotent, keyed by `image`).
+# `image` is relative to this file. To replace a photo, use a new file name:
+# the Telegram file_id cache is kept per image path.
+# Photos: Unsplash (free license). Demo only — replace with the client's own photos.
+
+items:
+  # --- Kitchens ---
+  - category: kitchen
+    title: Белая кухня с островом
+    style: Современный, белый матовый фасад, чёрные акценты
+    image: kitchen/01-white-island.jpg
+    source_url: https://unsplash.com/photos/gray-steel-3-door-refrigerator-near-modular-kitchen-MP0bgaS_d1c
+  - category: kitchen
+    title: Классическая белая кухня
+    style: Неоклассика, фрезерованные фасады, мраморная столешница
+    image: kitchen/02-white-classic.jpg
+    source_url: https://unsplash.com/photos/white-kitchen-room-set-G7sE2S4Lab4
+  - category: kitchen
+    title: Графитовая кухня с мрамором
+    style: Модерн, глянцевые фасады, столешница под мрамор
+    image: kitchen/03-graphite-marble.jpg
+    source_url: https://unsplash.com/photos/modern-kitchen-with-marble-countertops-oCw5_evbWyI
+  - category: kitchen
+    title: Чёрная кухня без ручек
+    style: Минимализм, матовые чёрные фасады
+    image: kitchen/04-black-minimal.jpg
+    source_url: https://unsplash.com/photos/modern-kitchen-with-black-cabinets-3hEGHI4b4gg
+  - category: kitchen
+    title: Светлая угловая кухня у окна
+    style: Современный, бежевые фасады, тёплый свет
+    image: kitchen/05-beige-window.jpg
+    source_url: https://unsplash.com/photos/modern-kitchen-with-island-and-large-window-VgyN_CWXQVM
+  - category: kitchen
+    title: Кухня с деревом и витриной
+    style: Лофт, шпон и тёмные фасады, барная стойка
+    image: kitchen/06-wood-loft.jpg
+    source_url: https://unsplash.com/photos/modern-kitchen-with-wood-cabinet-teal-stool-hYb7kbu4x7E
+
+  # --- Wardrobes ---
+  - category: wardrobe
+    title: Распашной шкаф из дуба
+    style: Классика, натуральный шпон
+    image: wardrobe/01-oak-classic.jpg
+    source_url: https://unsplash.com/photos/brown-wooden-2-door-cabinet-3fFBoEHee28
+  - category: wardrobe
+    title: Встроенный шкаф без ручек
+    style: Минимализм, серые матовые фасады, ниша с банкеткой
+    image: wardrobe/02-handleless-grey.jpg
+    source_url: https://unsplash.com/photos/a-room-with-a-bench-and-some-cupboards-RHARVor_ydc
+  - category: wardrobe
+    title: Шкаф-купе в белом
+    style: Современный, раздвижные белые двери
+    image: wardrobe/03-sliding-white.jpg
+    source_url: https://unsplash.com/photos/a-room-with-a-wooden-floor-and-white-closets-YbcX1Sbn5Qk
+  - category: wardrobe
+    title: Шкаф с зеркалами в спальню
+    style: Скандинавский, светлый дуб, зеркальные двери
+    image: wardrobe/04-oak-mirrors.jpg
+    source_url: https://unsplash.com/photos/a-bedroom-with-a-bed-and-a-wooden-closet-6Y3avYzs6os
+  - category: wardrobe
+    title: Открытая система хранения
+    style: Скандинавский, дуб, полки и ящики
+    image: wardrobe/05-open-oak.jpg
+    source_url: https://unsplash.com/photos/a-bedroom-with-a-bed-mirror-and-closet-M6T7PXLjDQo
+  - category: wardrobe
+    title: Чёрная открытая система
+    style: Лофт, чёрный каркас, подсветка
+    image: wardrobe/06-open-black.jpg
+    source_url: https://unsplash.com/photos/a-bedroom-with-a-bed-and-a-closet-q7YTIho6I4I
+
+  # --- Walk-in closets ---
+  - category: walk_in
+    title: Гардеробная с подсветкой
+    style: Модерн, серый шпон, LED-подсветка
+    image: walk_in/01-grey-led.jpg
+    source_url: https://unsplash.com/photos/a-large-walk-in-closet-with-a-wooden-floor-22bEhQA7SMo
+  - category: walk_in
+    title: П-образная гардеробная
+    style: Современный, тёплое дерево, открытые полки
+    image: walk_in/02-u-shaped-wood.jpg
+    source_url: https://unsplash.com/photos/a-walk-in-closet-filled-with-lots-of-clothes-9KVtDmNnFP4
+  - category: walk_in
+    title: Гардеробная с туалетным столиком
+    style: Современный, зеркало, купе-двери, стекло
+    image: walk_in/03-vanity-mirror.jpg
+    source_url: https://unsplash.com/photos/a-walk-in-closet-with-a-mirror-and-a-stool-SseNV6Ycb1c
+  - category: walk_in
+    title: Тёмная премиум-гардеробная
+    style: Премиум, тёмное дерево, подсветка полок
+    image: walk_in/04-dark-premium.jpg
+    source_url: https://unsplash.com/photos/a-walk-in-closet-with-shelves-drawers-and-a-suitcase-qlAWpiUiFyc
+  - category: walk_in
+    title: Компактная белая гардеробная
+    style: Минимализм, белые фасады, выдвижные ящики
+    image: walk_in/05-white-compact.jpg
+    source_url: https://unsplash.com/photos/a-walk-in-closet-with-white-cabinets-and-drawers-ifmNRVa8m9s
+  - category: walk_in
+    title: Гардеробная-коридор
+    style: Лофт, тёмный каркас, открытое хранение
+    image: walk_in/06-dark-open.jpg
+    source_url: https://unsplash.com/photos/a-walk-in-closet-filled-with-lots-of-clothes-FeW2HBoDov0
+
+  # --- Interiors ---
+  - category: interior
+    title: Гостиная-кухня в скандинавском стиле
+    style: Скандинавский, светлые стены, зелёные акценты
+    image: interior/01-scandi-green.jpg
+    source_url: https://unsplash.com/photos/gray-and-white-sofa-set-trG8989WjFA
+  - category: interior
+    title: Гостиная с арт-акцентом
+    style: Контемпорари, бетон и дерево, яркое искусство
+    image: interior/02-contemporary-art.jpg
+    source_url: https://unsplash.com/photos/a-living-room-filled-with-furniture-and-a-painting-on-the-wall-8ccOqbNdp1A
+  - category: interior
+    title: Светлая гостиная с камином
+    style: Современный, белые стены, деревянный пол
+    image: interior/03-light-modern.jpg
+    source_url: https://unsplash.com/photos/a-living-room-filled-with-furniture-and-a-fire-place-pkIJXMezi_E
+  - category: interior
+    title: Мягкий минимализм
+    style: Минимализм, бежевая гамма, округлые формы
+    image: interior/04-soft-minimal.jpg
+    source_url: https://unsplash.com/photos/a-living-room-with-a-couch-and-a-table-g_5UyVBIX_k
+  - category: interior
+    title: Серая гостиная с панорамным окном
+    style: Минимализм, серые тона, открытые стеллажи
+    image: interior/05-grey-minimal.jpg
+    source_url: https://unsplash.com/photos/a-modern-living-room-with-a-large-window-vIbxvHj9m9g
+  - category: interior
+    title: Гостиная в стиле лофт
+    style: Лофт, бетонная стена, кожаные кресла
+    image: interior/06-loft-concrete.jpg
+    source_url: https://unsplash.com/photos/modern-living-room-with-sectional-sofa-and-artwork-ugIfsN9l_q4
