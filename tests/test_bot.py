@@ -66,7 +66,14 @@ def test_dispatcher_builds() -> None:
     session_factory = create_session_factory(create_engine("sqlite+aiosqlite://"))
     dp = make_dispatcher(session_factory, FakeLLMClient())
 
-    assert [r.name for r in dp.sub_routers] == ["errors", "start", "catalog", "media", "qualify"]
+    assert [r.name for r in dp.sub_routers] == [
+        "errors",
+        "tryon",
+        "start",
+        "catalog",
+        "media",
+        "qualify",
+    ]
 
 
 async def test_start_update_flows_through_dispatcher(

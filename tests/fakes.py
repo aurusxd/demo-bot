@@ -17,6 +17,7 @@ from app.clients.base import (
     ChatMessage,
     CrmClient,
     FileDownloader,
+    ImageGenClient,
     LeadNotifier,
     LLMClient,
     SpeechClient,
@@ -38,6 +39,7 @@ def make_settings(**overrides: Any) -> Settings:
         deepseek_api_key="k",
         polza_api_key="pk",
         polza_stt_model="openai/whisper-1",
+        polza_image_model="google/gemini-3.1-flash-lite-image",
         admin_chat_id=777,
         **overrides,
     )
@@ -49,6 +51,7 @@ def make_dispatcher(
     *,
     settings: Settings | None = None,
     speech: SpeechClient | None = None,
+    image_gen: ImageGenClient | None = None,
     downloader: FileDownloader | None = None,
     crm: CrmClient | None = None,
     notifier: LeadNotifier | None = None,
@@ -58,6 +61,7 @@ def make_dispatcher(
         session_factory,
         llm,
         speech or FakeSpeechClient(),
+        image_gen or FakeImageGenClient(),
         downloader or FakeDownloader(),
         make_lead_services(crm or FakeCrmClient(), notifier or FakeNotifier()),
     )
@@ -161,6 +165,24 @@ class FakeSpeechClient:
 
     async def transcribe(self, audio: bytes, mime_type: str) -> str:
         self.calls.append((audio, mime_type))
+        response = self._responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    async def close(self) -> None:
+        return None
+
+
+class FakeImageGenClient:
+    """ImageGenClient that replays scripted images (bytes) or raises scripted exceptions."""
+
+    def __init__(self, *responses: bytes | Exception) -> None:
+        self._responses = list(responses)
+        self.calls: list[tuple[bytes, bytes, str]] = []
+
+    async def edit(self, room_photo: bytes, reference_photo: bytes, prompt: str) -> bytes:
+        self.calls.append((room_photo, reference_photo, prompt))
         response = self._responses.pop(0)
         if isinstance(response, Exception):
             raise response

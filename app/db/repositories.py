@@ -11,6 +11,7 @@ from app.db.models import (
     LeadStatus,
     MediaKind,
     Message,
+    TryOnRequest,
     User,
 )
 
@@ -140,3 +141,7 @@ class CatalogRepository(BaseRepository[CatalogItem]):
             .limit(1)
         )
         return (await self._session.scalars(stmt)).first()
+
+
+class TryOnRequestRepository(BaseRepository[TryOnRequest]):
+    model = TryOnRequest

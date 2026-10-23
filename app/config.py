@@ -26,7 +26,8 @@ class Settings(BaseSettings):
 
     polza_api_key: SecretStr
     polza_base_url: str = "https://polza.ai/api/v1"
-    polza_image_model: str | None = None
+    polza_image_model: str  # Nano Banana for the try-on
+    polza_image_provider: str | None = None  # Polza routing: provider.only = [this]
     polza_stt_model: str
     polza_stt_provider: str | None = None  # Polza routing: provider.only = [this]
 
@@ -35,7 +36,7 @@ class Settings(BaseSettings):
     catalog_path: Path = Path("assets/catalog/catalog.yaml")  # images are relative to it
     lead_retry_interval_s: float = Field(default=300.0, gt=0)  # re-delivery of stuck leads
     database_url: str = "sqlite+aiosqlite:///data/app.db"
-    tryon_daily_limit: int = 5
+    tryon_daily_limit: int = Field(default=5, ge=0)  # per user; ADMIN_IDS are not limited
     throttle_max_messages: int = 10
     throttle_max_callbacks: int = 60  # button presses: no LLM, own limit
     throttle_window_s: float = 60.0

@@ -86,6 +86,30 @@ CATALOG_CATEGORY_LABELS = {
 CATALOG_FAILED = "😔 Не получилось загрузить примеры. Попросите показать их ещё раз чуть позже."
 CATALOG_EMPTY = "🖼 Примеров в этой категории пока нет — менеджер покажет их на встрече."
 
+# --- Try-on: a catalog item in the client's room (HTML; values are escaped by the handler) ---
+
+TRYON_BUTTON = "🏠 Попробовать у себя"
+TRYON_MORE_BUTTON = "🔄 Другая мебель"
+TRYON_LEAD_BUTTON = "📝 Оставить заявку"
+TRYON_ASK_PHOTO = (
+    "📸 Пришлите фото вашей комнаты или стены, куда хотите <b>{title}</b>.\n"
+    "Лучше снимать днём, целиком, с уровня глаз — так результат будет точнее."
+)
+TRYON_GENERATING = "⏳ Генерирую — это займёт до минуты…"
+TRYON_RESULT_CAPTION = (
+    "✨ <b>{title}</b> у вас в интерьере\n"
+    "Это визуализация ИИ: точный проект и размеры подготовит дизайнер после замера."
+)
+TRYON_FAILED = (
+    "😔 Не получилось сгенерировать примерку. Пришлите фото ещё раз или попробуйте чуть позже."
+)
+TRYON_LIMIT = (
+    "🙏 На сегодня примерки закончились — это демо, генераций {limit} в день. Возвращайтесь завтра!"
+)
+TRYON_ITEM_GONE = "Этой позиции больше нет в каталоге 🙏 Выберите, пожалуйста, другую."
+# Sent into the dialog as the client's message when they press «Оставить заявку».
+TRYON_LEAD_REQUEST = "Хочу оставить заявку. На примерке у себя понравился вариант «{title}»."
+
 
 def format_price(value: int, currency: str) -> str:
     """115000 -> '115 000 ₽' (narrow no-break space keeps the number on one line)."""

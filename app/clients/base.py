@@ -35,7 +35,9 @@ class LLMClient(Protocol):
 
 
 class ImageGenClient(Protocol):
-    async def edit(self, room_photo: bytes, reference_photo: bytes, prompt: str) -> bytes: ...
+    async def edit(self, room_photo: bytes, reference_photo: bytes, prompt: str) -> bytes:
+        """Generate one image from two JPEGs (room + catalog reference); return its bytes."""
+        ...
 
 
 class SpeechClient(Protocol):
@@ -99,8 +101,11 @@ class HttpClient:
         data: Mapping[str, str] | None = None,
         files: Mapping[str, FileField] | None = None,
         timeout_s: float | None = None,
+        log_path: str | None = None,
     ) -> httpx.Response:
+        """`log_path` replaces `path` in logs: for URLs that grant access (signed, file links)."""
         attempts = self._max_retries + 1
+        logged_path = log_path or path
         timeout = timeout_s if timeout_s is not None else httpx.USE_CLIENT_DEFAULT
         for attempt in range(1, attempts + 1):
             started = time.perf_counter()
@@ -109,13 +114,13 @@ class HttpClient:
                     method, path, json=json, data=data, files=files, timeout=timeout
                 )
             except httpx.TransportError as exc:
-                self._log_failure(method, path, attempt, started, type(exc).__name__)
+                self._log_failure(method, logged_path, attempt, started, type(exc).__name__)
                 if attempt == attempts:
                     raise ExternalServiceError(self._service, type(exc).__name__) from exc
                 await self._sleep_before_retry(attempt)
                 continue
 
-            self._log_response(method, path, attempt, started, response)
+            self._log_response(method, logged_path, attempt, started, response)
             if response.status_code in RETRYABLE_STATUSES and attempt < attempts:
                 await self._sleep_before_retry(attempt)
                 continue

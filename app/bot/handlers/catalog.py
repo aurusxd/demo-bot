@@ -113,7 +113,7 @@ def _caption(card: CatalogCard) -> str:
 
 
 def _keyboard(card: CatalogCard) -> InlineKeyboardMarkup:
-    return catalog_keyboard(card.category, card.index, card.total)
+    return catalog_keyboard(card.category, card.index, card.total, card.item_id)
 
 
 def create_router() -> Router:

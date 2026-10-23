@@ -8,7 +8,7 @@ from aiogram.enums import ParseMode
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.bot.handlers import catalog, errors, media, qualify, start
+from app.bot.handlers import catalog, errors, media, qualify, start, tryon
 from app.bot.handlers.media import MediaGroupTracker
 from app.bot.lead_retry import LeadDeliveryRetrier
 from app.bot.middlewares.db_session import DbSessionMiddleware
@@ -17,10 +17,10 @@ from app.bot.middlewares.services import ServicesMiddleware
 from app.bot.middlewares.throttle import ThrottlingMiddleware
 from app.bot.middlewares.user import UserMiddleware
 from app.bot.middlewares.user_lock import UserLockMiddleware
-from app.clients.base import FileDownloader, LLMClient, SpeechClient
+from app.clients.base import FileDownloader, ImageGenClient, LLMClient, SpeechClient
 from app.clients.crm import LogCrmClient, WebhookCrmClient
 from app.clients.deepseek import DeepSeekClient
-from app.clients.polza import PolzaSpeechClient
+from app.clients.polza import PolzaImageClient, PolzaSpeechClient
 from app.clients.telegram import TelegramFileDownloader, TelegramLeadNotifier
 from app.config import Settings, get_settings
 from app.core.locks import UserLocks
@@ -31,6 +31,7 @@ from app.services.catalog import CatalogService, load_catalog
 from app.services.estimate import EstimateService, load_pricing
 from app.services.leads import LeadServiceFactory
 from app.services.media import MediaService
+from app.services.tryon import TryOnServiceFactory
 
 
 def build_dispatcher(
@@ -38,6 +39,7 @@ def build_dispatcher(
     session_factory: async_sessionmaker[AsyncSession],
     llm: LLMClient,
     speech: SpeechClient,
+    image_gen: ImageGenClient,
     downloader: FileDownloader,
     lead_services: LeadServiceFactory,
     locks: UserLocks | None = None,
@@ -56,17 +58,23 @@ def build_dispatcher(
     dp.update.outer_middleware(UserLockMiddleware(locks or UserLocks()))
     dp.update.outer_middleware(DbSessionMiddleware(session_factory))
     dp.update.outer_middleware(UserMiddleware())
+    catalog_dir = settings.catalog_path.parent
+    tryon_services = TryOnServiceFactory(
+        image_gen, catalog_dir, settings.tryon_daily_limit, frozenset(settings.admin_ids)
+    )
     dp.update.outer_middleware(
         ServicesMiddleware(
-            llm, MediaService(downloader, speech), lead_services, settings.catalog_path.parent
+            llm, MediaService(downloader, speech), lead_services, tryon_services, catalog_dir
         )
     )
     for observer in (dp.message, dp.callback_query):
         observer.middleware(HandlerLoggingMiddleware())
 
-    # Order matters: commands before the free-text dialog catch-all.
+    # Order matters: try-on first (it drops its state on any non-photo message and passes
+    # the message on), commands before the free-text dialog catch-all.
     dp.include_routers(
         errors.create_router(),
+        tryon.create_router(),
         start.create_router(),
         catalog.create_router(),
         media.create_router(),
@@ -95,6 +103,12 @@ async def main() -> None:
         settings.polza_stt_model,
         settings.polza_stt_provider,
     )
+    image_gen = PolzaImageClient.create(
+        settings.polza_base_url,
+        settings.polza_api_key.get_secret_value(),
+        settings.polza_image_model,
+        settings.polza_image_provider,
+    )
     pricing = await asyncio.to_thread(load_pricing, settings.pricing_path)
     crm = _create_crm(settings)
     session_factory = create_session_factory(engine)
@@ -108,6 +122,7 @@ async def main() -> None:
         session_factory,
         llm,
         speech,
+        image_gen,
         TelegramFileDownloader(bot),
         lead_services,
         locks,
@@ -127,6 +142,7 @@ async def main() -> None:
         await bot.session.close()
         await llm.close()
         await speech.close()
+        await image_gen.close()
         await crm.close()
         await engine.dispose()
         logger.info("bot stopped")

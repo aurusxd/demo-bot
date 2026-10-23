@@ -1,4 +1,7 @@
+import io
+
 import pytest
+from PIL import Image
 
 from app.core.errors import (
     EmptyTranscriptionError,
@@ -9,6 +12,7 @@ from app.core.errors import (
 from app.services.media import (
     MAX_FILE_SIZE_BYTES,
     MAX_VOICE_DURATION_S,
+    TRYON_MAX_SIDE_PX,
     MediaService,
     PhotoInput,
     VoiceInput,
@@ -92,3 +96,21 @@ async def test_download_error_propagates() -> None:
 
     with pytest.raises(ExternalServiceError):
         await service.validate_photo(PhotoInput("missing"))
+
+
+async def test_tryon_photo_is_shrunk_to_jpeg() -> None:
+    big = image_bytes("PNG", size=(3000, 1500))
+    service = MediaService(FakeDownloader({"p1": big}), FakeSpeechClient())
+
+    prepared = await service.prepare_tryon_photo(PhotoInput("p1"))
+
+    with Image.open(io.BytesIO(prepared)) as image:
+        assert image.format == "JPEG"
+        assert image.size == (TRYON_MAX_SIDE_PX, TRYON_MAX_SIDE_PX // 2)
+
+
+async def test_tryon_photo_is_validated() -> None:
+    service = MediaService(FakeDownloader({"p1": b"not an image"}), FakeSpeechClient())
+
+    with pytest.raises(InvalidImageError):
+        await service.prepare_tryon_photo(PhotoInput("p1"))

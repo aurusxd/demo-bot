@@ -16,8 +16,28 @@ class CatalogPage(CallbackData, prefix="cat"):
     index: int
 
 
-def catalog_keyboard(category: CatalogCategory, index: int, total: int) -> InlineKeyboardMarkup:
-    """◀ n / total ▶ (only if there is more than one card) and the category switcher."""
+class TryOnStart(CallbackData, prefix="try"):
+    """«Попробовать у себя» under a catalog card. Client-controlled: the item may be gone."""
+
+    item_id: int
+
+
+class TryOnMore(CallbackData, prefix="try_more"):
+    """«Другая мебель» under a try-on result: the catalog as a new card, the result stays."""
+
+    category: CatalogCategory
+
+
+class TryOnLead(CallbackData, prefix="try_lead"):
+    """«Оставить заявку» under a try-on result: continues the dialog about this item."""
+
+    item_id: int
+
+
+def catalog_keyboard(
+    category: CatalogCategory, index: int, total: int, item_id: int
+) -> InlineKeyboardMarkup:
+    """◀ n / total ▶ (only if there is more than one card), try-on, the category switcher."""
     rows: list[list[InlineKeyboardButton]] = []
     if total > 1:
         rows.append(
@@ -27,12 +47,32 @@ def catalog_keyboard(category: CatalogCategory, index: int, total: int) -> Inlin
                 _page_button(texts.CATALOG_NEXT, category, index + 1),
             ]
         )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=texts.TRYON_BUTTON, callback_data=TryOnStart(item_id=item_id).pack()
+            )
+        ]
+    )
     categories = [_category_button(c, current=c is category) for c in CatalogCategory]
     rows.extend(
         categories[i : i + CATEGORIES_PER_ROW]
         for i in range(0, len(categories), CATEGORIES_PER_ROW)
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def tryon_result_keyboard(category: CatalogCategory, item_id: int) -> InlineKeyboardMarkup:
+    more = TryOnMore(category=category).pack()
+    lead = TryOnLead(item_id=item_id).pack()
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text=texts.TRYON_MORE_BUTTON, callback_data=more),
+                InlineKeyboardButton(text=texts.TRYON_LEAD_BUTTON, callback_data=lead),
+            ]
+        ]
+    )
 
 
 def _category_button(category: CatalogCategory, current: bool) -> InlineKeyboardButton:

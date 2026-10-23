@@ -179,17 +179,18 @@ def _callbacks(markup: InlineKeyboardMarkup) -> list[list[str | None]]:
 
 
 def test_keyboard_pages_wrap_and_marks_current_category() -> None:
-    rows = _callbacks(catalog_keyboard(CatalogCategory.KITCHEN, 0, 3))
+    rows = _callbacks(catalog_keyboard(CatalogCategory.KITCHEN, 0, 3, item_id=7))
 
     assert rows[0] == ["cat:kitchen:-1", CATALOG_NOOP, "cat:kitchen:1"]
-    assert rows[1:] == [[CATALOG_NOOP, "cat:wardrobe:0"], ["cat:walk_in:0", "cat:interior:0"]]
+    assert rows[1] == ["try:7"]
+    assert rows[2:] == [[CATALOG_NOOP, "cat:wardrobe:0"], ["cat:walk_in:0", "cat:interior:0"]]
 
 
 def test_keyboard_without_paging_for_single_card() -> None:
-    rows = _callbacks(catalog_keyboard(CatalogCategory.INTERIOR, 0, 1))
+    rows = _callbacks(catalog_keyboard(CatalogCategory.INTERIOR, 0, 1, item_id=7))
 
     assert all("cat:interior" not in str(row) for row in rows)
-    assert len(rows) == 2  # only the category switcher
+    assert len(rows) == 3  # try-on and the category switcher
 
 
 # --- handlers through the dispatcher ---

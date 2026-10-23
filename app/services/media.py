@@ -3,7 +3,7 @@ import io
 from dataclasses import dataclass
 
 from loguru import logger
-from PIL import Image
+from PIL import Image, ImageOps
 
 from app.clients.base import FileDownloader, SpeechClient
 from app.core.errors import EmptyTranscriptionError, InvalidImageError, MediaTooLargeError
@@ -12,6 +12,8 @@ MAX_VOICE_DURATION_S = 60
 MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 ALLOWED_IMAGE_FORMATS = frozenset({"JPEG", "PNG", "WEBP"})
 DEFAULT_VOICE_MIME = "audio/ogg"
+TRYON_MAX_SIDE_PX = 1536
+JPEG_QUALITY = 90
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +55,14 @@ class MediaService:
         image_format = await asyncio.to_thread(_verify_image, data)
         logger.info("photo validated format={} bytes={}", image_format, len(data))
 
+    async def prepare_tryon_photo(self, photo: PhotoInput) -> bytes:
+        """Download, check and shrink the room photo for the try-on: a JPEG in memory."""
+        data = await self._download(photo.file_id, photo.file_size)
+        await asyncio.to_thread(_verify_image, data)
+        prepared = await asyncio.to_thread(fit_jpeg, data)
+        logger.info("tryon photo prepared bytes_in={} bytes_out={}", len(data), len(prepared))
+        return prepared
+
     async def _download(self, file_id: str, declared_size: int | None) -> bytes:
         if declared_size is not None and declared_size > MAX_FILE_SIZE_BYTES:
             logger.info("file rejected declared_bytes={}", declared_size)
@@ -77,3 +87,16 @@ def _verify_image(data: bytes) -> str:
         logger.info("photo rejected format={}", image_format)
         raise InvalidImageError(f"format {image_format}")
     return image_format
+
+
+def fit_jpeg(data: bytes, max_side: int = TRYON_MAX_SIDE_PX) -> bytes:
+    """Blocking (Pillow): run in a worker thread. Shrinks to `max_side`, re-encodes as JPEG.
+
+    The image must be verified first. EXIF orientation is applied, metadata is dropped.
+    """
+    with Image.open(io.BytesIO(data)) as source:
+        image = ImageOps.exif_transpose(source).convert("RGB")
+    image.thumbnail((max_side, max_side))
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=JPEG_QUALITY)
+    return buffer.getvalue()

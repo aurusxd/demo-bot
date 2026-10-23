@@ -5,9 +5,10 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 import respx
+from loguru import logger
 
 from app.clients.base import HttpClient
-from app.clients.polza import STT_TIMEOUT_S, PolzaSpeechClient
+from app.clients.polza import IMAGE_TIMEOUT_S, STT_TIMEOUT_S, PolzaImageClient, PolzaSpeechClient
 from app.core.errors import ExternalServiceError
 
 BASE_URL = "https://polza.test/api/v1"
@@ -88,4 +89,122 @@ async def test_production_client_retries_once_with_timeout(
 
     assert route.call_count == 2
     assert route.calls.last.request.extensions["timeout"]["read"] == STT_TIMEOUT_S
+    await client.close()
+
+
+# --- image generation (Media API) ---
+
+MEDIA_URL = f"{BASE_URL}/media"
+RESULT_URL = "https://cdn.polza.test/f/1/result.jpg"
+ROOM, REFERENCE, RESULT = b"room-jpeg", b"reference-jpeg", b"result-jpeg"
+
+
+def make_image_client(provider: str | None = "mie") -> PolzaImageClient:
+    http = HttpClient("polza", BASE_URL, headers={"Authorization": "Bearer pk"}, backoff_s=0)
+    files = HttpClient("polza-cdn", "", backoff_s=0)
+    return PolzaImageClient(http, files, "google/gemini-3.1-flash-lite-image", provider, 0)
+
+
+def media(status: str, data: object = None, error: object = None) -> dict[str, object]:
+    return {
+        "id": "gen_1",
+        "object": "media.generation",
+        "status": status,
+        "data": data,
+        "error": error,
+    }
+
+
+@respx.mock
+async def test_edit_sends_both_images_and_downloads_result() -> None:
+    route = respx.post(MEDIA_URL).mock(
+        return_value=httpx.Response(200, json=media("completed", [{"url": RESULT_URL}]))
+    )
+    cdn = respx.get(RESULT_URL).mock(return_value=httpx.Response(200, content=RESULT))
+    client = make_image_client()
+
+    image = await client.edit(ROOM, REFERENCE, "put it in")
+
+    assert image == RESULT
+    body = json.loads(route.calls.last.request.content)
+    assert body["model"] == "google/gemini-3.1-flash-lite-image"
+    assert body["provider"] == {"only": ["mie"]}
+    assert body["input"]["prompt"] == "put it in"
+    assert body["input"]["images"] == [
+        {"type": "base64", "data": "data:image/jpeg;base64," + base64.b64encode(ROOM).decode()},
+        {
+            "type": "base64",
+            "data": "data:image/jpeg;base64," + base64.b64encode(REFERENCE).decode(),
+        },
+    ]
+    # The CDN link is downloaded without the API key.
+    assert "Authorization" not in cdn.calls.last.request.headers
+    await client.close()
+
+
+@respx.mock
+async def test_pending_generation_is_polled() -> None:
+    respx.post(MEDIA_URL).mock(return_value=httpx.Response(200, json=media("pending")))
+    poll = respx.get(f"{MEDIA_URL}/gen_1").mock(
+        side_effect=[
+            httpx.Response(200, json=media("processing")),
+            httpx.Response(200, json=media("completed", {"url": RESULT_URL})),
+        ]
+    )
+    respx.get(RESULT_URL).mock(return_value=httpx.Response(200, content=RESULT))
+    client = make_image_client(provider=None)
+
+    assert await client.edit(ROOM, REFERENCE, "p") == RESULT
+    assert poll.call_count == 2
+    await client.close()
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "payload",
+    [
+        media("failed", error={"code": "BAD_GATEWAY", "message": "упс"}),
+        media("completed", []),  # e.g. the model refused and answered with text only
+        {"status": "completed"},  # no id: unexpected shape
+    ],
+)
+async def test_failed_or_empty_generation_raises(payload: dict[str, object]) -> None:
+    respx.post(MEDIA_URL).mock(return_value=httpx.Response(200, json=payload))
+    client = make_image_client()
+
+    with pytest.raises(ExternalServiceError):
+        await client.edit(ROOM, REFERENCE, "p")
+    await client.close()
+
+
+@respx.mock
+async def test_image_server_error_is_retried_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(HttpClient, "_sleep_before_retry", AsyncMock())  # no real backoff
+    route = respx.post(MEDIA_URL).mock(return_value=httpx.Response(503))
+    client = PolzaImageClient.create(BASE_URL, "pk", "model", "mie")
+
+    with pytest.raises(ExternalServiceError):
+        await client.edit(ROOM, REFERENCE, "p")
+
+    assert route.call_count == 2
+    assert route.calls.last.request.extensions["timeout"]["read"] == IMAGE_TIMEOUT_S
+    await client.close()
+
+
+@respx.mock
+async def test_result_url_is_not_logged() -> None:
+    respx.post(MEDIA_URL).mock(
+        return_value=httpx.Response(200, json=media("completed", [{"url": RESULT_URL}]))
+    )
+    respx.get(RESULT_URL).mock(return_value=httpx.Response(200, content=RESULT))
+    client = make_image_client()
+    lines: list[str] = []
+    sink_id = logger.add(lines.append, format="{message}")
+    try:
+        await client.edit(ROOM, REFERENCE, "p")
+    finally:
+        logger.remove(sink_id)
+
+    assert any("<result url>" in line for line in lines)
+    assert all(RESULT_URL not in line for line in lines)
     await client.close()

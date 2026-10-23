@@ -25,3 +25,15 @@ class InvalidImageError(InvalidInputError):
 
 class EmptyTranscriptionError(InvalidInputError):
     """Speech recognition returned no text (silence, noise)."""
+
+
+class CatalogItemNotFoundError(AppError):
+    """The catalog item is gone (removed from catalog.yaml) or the id is forged."""
+
+
+class TryOnLimitError(AppError):
+    """The user's daily try-on generations are used up."""
+
+
+class TryOnFailedError(AppError):
+    """Try-on generation failed (image API error, timeout, unreadable reference)."""

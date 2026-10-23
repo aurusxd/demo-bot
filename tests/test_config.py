@@ -9,6 +9,7 @@ def make_settings(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
         "DEEPSEEK_API_KEY": "sk-test-key",
         "POLZA_API_KEY": "pk-test-key",
         "POLZA_STT_MODEL": "openai/whisper-1",
+        "POLZA_IMAGE_MODEL": "google/gemini-3.1-flash-lite-image",
         "ADMIN_CHAT_ID": "777",
         **env,
     }
@@ -30,12 +31,15 @@ def test_deepseek_key_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
         Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
 
 
-@pytest.mark.parametrize("missing", ["POLZA_API_KEY", "POLZA_STT_MODEL", "ADMIN_CHAT_ID"])
+@pytest.mark.parametrize(
+    "missing", ["POLZA_API_KEY", "POLZA_STT_MODEL", "POLZA_IMAGE_MODEL", "ADMIN_CHAT_ID"]
+)
 def test_service_settings_are_required(monkeypatch: pytest.MonkeyPatch, missing: str) -> None:
     monkeypatch.setenv("BOT_TOKEN", "123:abc")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deep")
     monkeypatch.setenv("POLZA_API_KEY", "pk")
     monkeypatch.setenv("POLZA_STT_MODEL", "openai/whisper-1")
+    monkeypatch.setenv("POLZA_IMAGE_MODEL", "google/gemini-3.1-flash-lite-image")
     monkeypatch.setenv("ADMIN_CHAT_ID", "777")
     monkeypatch.delenv(missing)
     with pytest.raises(ValidationError):
