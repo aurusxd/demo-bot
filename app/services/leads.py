@@ -17,7 +17,8 @@ from app.services.estimate import ESTIMATE_INPUTS, EstimateService
 
 
 class LeadService:
-    """A qualified lead: price estimate, delivery to the CRM and the managers' chat, updates.
+    """A lead's price estimate (from the first turn it is computable), delivery to the CRM
+    and the managers' chat once qualified, updates.
 
     Delivery has two independent marks: `status = sent` (the CRM accepted the lead) and
     `manager_notified_at` (the card went out). `submit` only does what is still missing,
@@ -63,8 +64,10 @@ class LeadService:
             card_pending = lead.manager_notified_at is None
             if lead.status is LeadStatus.DRAFT or not (crm_pending or card_pending):
                 return lead.status is LeadStatus.SENT
-            if crm_pending and lead.estimate_min is None:
-                self._apply_estimate(lead)  # e.g. the bot stopped before the estimate step
+            if crm_pending:
+                # Always recompute: a stored range may predate the last slot change if the
+                # bot stopped between saving the slots and the estimate step.
+                self._apply_estimate(lead)
             payload = await self._payload(lead, LeadEvent.CREATED)
             await self._uow.commit()  # nothing is held in the DB during external calls
 

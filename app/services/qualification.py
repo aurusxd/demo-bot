@@ -21,6 +21,7 @@ from app.db.models import (
 from app.db.repositories import LeadMediaRepository, LeadRepository, MessageRepository, UnitOfWork
 from app.prompts.qualification import (
     CURRENT_SLOTS_TEMPLATE,
+    ESTIMATE_SHOWN_TEMPLATE,
     INVALID_JSON_HINT,
     PHOTO_MARKER,
     SYSTEM_PROMPT,
@@ -173,7 +174,7 @@ class QualificationService:
     async def _ask_llm(self, lead: Lead, history: list[Message]) -> LLMReply | None:
         prompt = [
             ChatMessage("system", SYSTEM_PROMPT),
-            ChatMessage("system", CURRENT_SLOTS_TEMPLATE.format(slots=_slots_json(lead))),
+            ChatMessage("system", _lead_context(lead)),
             *(_to_chat_message(m) for m in history),
         ]
         try:
@@ -251,8 +252,13 @@ def _lead_slots(lead: Lead) -> dict[str, str]:
     return slots
 
 
-def _slots_json(lead: Lead) -> str:
-    return json.dumps(_lead_slots(lead), ensure_ascii=False)
+def _lead_context(lead: Lead) -> str:
+    """Known slots plus the range the client has already seen (the bot shows it once stored)."""
+    context = CURRENT_SLOTS_TEMPLATE.format(slots=json.dumps(_lead_slots(lead), ensure_ascii=False))
+    if lead.estimate_min is None or lead.estimate_max is None:
+        return context
+    shown = ESTIMATE_SHOWN_TEMPLATE.format(min_price=lead.estimate_min, max_price=lead.estimate_max)
+    return f"{context}\n{shown}"
 
 
 def _required_filled(lead: Lead) -> bool:

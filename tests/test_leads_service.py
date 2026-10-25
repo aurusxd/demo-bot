@@ -145,6 +145,16 @@ async def test_submit_computes_missing_estimate(session: AsyncSession) -> None:
     assert crm.sent[0].estimate_min == 115000
 
 
+async def test_submit_recomputes_stale_estimate(session: AsyncSession) -> None:
+    """The stored range may predate the last length change if the bot stopped in between."""
+    _, lead = await make_lead(session, length_m=4.0, estimate_min=115000, estimate_max=155000)
+    crm = FakeCrmClient()
+
+    await make_service(session, crm).submit(lead.id)
+
+    assert (crm.sent[0].estimate_min, crm.sent[0].estimate_max) == (153000, 207000)
+
+
 async def test_draft_is_never_submitted(session: AsyncSession) -> None:
     _, lead = await make_lead(session, status=LeadStatus.DRAFT)
     crm, notifier = FakeCrmClient(), FakeNotifier()

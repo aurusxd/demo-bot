@@ -25,7 +25,12 @@ from app.db.repositories import (
     UnitOfWork,
     UserRepository,
 )
-from app.prompts.qualification import INVALID_JSON_HINT, PHOTO_MARKER, SYSTEM_PROMPT
+from app.prompts.qualification import (
+    ESTIMATE_SHOWN_TEMPLATE,
+    INVALID_JSON_HINT,
+    PHOTO_MARKER,
+    SYSTEM_PROMPT,
+)
 from app.services.qualification import (
     HISTORY_LIMIT,
     LLM_TURN_BUDGET_S,
@@ -114,6 +119,21 @@ async def test_estimate_due_on_price_input_change_or_price_question(
     results = [await service.handle_message(user, text) for text in ("а", "б", "в", "г")]
 
     assert [r.estimate_due for r in results] == [False, True, False, True]
+
+
+async def test_shown_estimate_is_in_llm_context(session: AsyncSession) -> None:
+    user = await make_user(session)
+    llm = FakeLLMClient(llm_json("Размеры?"), llm_json("Дешевле — ЛДСП"))
+    service = make_service(session, llm)
+
+    await service.handle_message(user, "кухня")
+    assert "расчёт" not in llm.calls[0][1].content  # nothing shown yet
+    lead = (await session.scalars(select(Lead))).one()
+    lead.estimate_min, lead.estimate_max = 115000, 155000
+    await service.handle_message(user, "А почему так дорого?")
+
+    context = llm.calls[1][1].content
+    assert ESTIMATE_SHOWN_TEMPLATE.format(min_price=115000, max_price=155000) in context
 
 
 async def test_null_slots_do_not_erase_known_values(session: AsyncSession) -> None:
