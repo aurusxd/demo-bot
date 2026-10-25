@@ -26,6 +26,7 @@ from app.prompts.qualification import (
     SYSTEM_PROMPT,
 )
 from app.schemas.qualification import LLMReply
+from app.services.estimate import ESTIMATE_INPUTS
 
 HISTORY_LIMIT = 12
 # Hard cap for one dialog turn (all LLM attempts): the user must not wait for minutes.
@@ -57,6 +58,8 @@ class TurnResult:
     qualified: bool = False  # True only on the turn the lead became qualified
     slots: dict[str, str] = field(default_factory=dict[str, str])
     catalog: CatalogCategory | None = None  # show this catalog category after the reply
+    # Show the client the price range (if computable): its inputs changed or it was asked.
+    estimate_due: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,12 +118,16 @@ class QualificationService:
             if qualified:
                 await self._set_status(lead, LeadStatus.QUALIFIED)
             await self._uow.commit()
+            estimate_due = reply.price_asked or bool(ESTIMATE_INPUTS.intersection(updated))
             logger.info(
-                "qualification turn done updated_slots={} llm_ready={} qualified={} catalog={}",
+                "qualification turn done updated_slots={} llm_ready={} qualified={} catalog={} "
+                "price_asked={} estimate_due={}",
                 updated,
                 reply.ready,
                 qualified,
                 reply.catalog,
+                reply.price_asked,
+                estimate_due,
             )
             return TurnResult(
                 reply=reply.reply,
@@ -129,6 +136,7 @@ class QualificationService:
                 changed_slots=tuple(updated),
                 slots=_lead_slots(lead),
                 catalog=reply.catalog,
+                estimate_due=estimate_due,
             )
 
     async def attach_photo(self, user: User, tg_file_id: str, ack: str | None) -> PhotoAttached:
@@ -223,7 +231,13 @@ def _to_chat_message(message: Message) -> ChatMessage:
         # Past answers are replayed in the full JSON shape the model must return. With
         # plain-text history DeepSeek's JSON mode often returns empty content; with a
         # reply-only shape it starts omitting "slots". Known slot values are sent separately.
-        payload = {"reply": message.content, "slots": _EMPTY_SLOTS, "ready": False, "catalog": None}
+        payload = {
+            "reply": message.content,
+            "slots": _EMPTY_SLOTS,
+            "ready": False,
+            "catalog": None,
+            "price_asked": False,
+        }
         return ChatMessage("assistant", json.dumps(payload, ensure_ascii=False))
     return ChatMessage("user", message.content)
 

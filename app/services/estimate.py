@@ -6,6 +6,9 @@ from loguru import logger
 from app.db.models import FurnitureType, PriceClass
 from app.schemas.estimate import EstimateResult, PricingConfig
 
+# Lead slots the price depends on: a change recomputes the estimate.
+ESTIMATE_INPUTS = frozenset({"furniture_type", "length_m", "price_class"})
+
 
 def load_pricing(path: Path) -> PricingConfig:
     """Blocking file read: call at startup (via asyncio.to_thread)."""

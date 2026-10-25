@@ -67,7 +67,7 @@ SEND_AS_PHOTO = (
     "🖼 Пришлите, пожалуйста, картинку как фото, а не файлом — так я приложу её к заявке."
 )
 
-# --- Estimate for the client (sent after the LLM's thank-you on qualification) ---
+# --- Estimate for the client (sent after the LLM's reply once type and length are known) ---
 
 ESTIMATE_RANGE = (
     "💰 Предварительный расчёт: {min_price} – {max_price}.\n"

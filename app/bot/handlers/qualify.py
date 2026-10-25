@@ -9,7 +9,7 @@ from app.db.models import MessageKind, User
 from app.schemas.estimate import EstimateResult
 from app.services.catalog import CatalogService
 from app.services.leads import LeadService
-from app.services.qualification import QualificationService
+from app.services.qualification import QualificationService, TurnResult
 
 
 async def run_dialog_turn(
@@ -35,9 +35,8 @@ async def run_dialog_turn(
     # LLM output is plain text: never parse it as HTML. On qualification the LLM itself
     # thanks the client and recaps the order, so no robotic summary is sent here.
     await message.answer(result.reply or texts.QUALIFY_FALLBACK, parse_mode=None)
-    if result.lead_id is not None and result.qualified:
-        estimate = await leads.estimate(result.lead_id)
-        await message.answer(_estimate_text(estimate))
+    if result.lead_id is not None and (result.estimate_due or result.qualified):
+        await _send_estimate(message, leads, result.lead_id, result)
     if result.catalog is not None:
         # Never raises: a failed card must not cost the lead its delivery below.
         await show_catalog(message, catalog, result.catalog)
@@ -60,9 +59,18 @@ async def dialog_message(
     await run_dialog_turn(message, user, qualification, leads, catalog, message.text or "")
 
 
-def _estimate_text(estimate: EstimateResult | None) -> str:
-    if estimate is None:
-        return texts.ESTIMATE_AFTER_MEASURE
+async def _send_estimate(
+    message: Message, leads: LeadService, lead_id: int, result: TurnResult
+) -> None:
+    """The range as soon as it is computable; a known range is not repeated on qualification."""
+    estimate = await leads.estimate(lead_id)
+    if estimate is not None and result.estimate_due:
+        await message.answer(_estimate_text(estimate))
+    elif estimate is None and result.qualified:
+        await message.answer(texts.ESTIMATE_AFTER_MEASURE)
+
+
+def _estimate_text(estimate: EstimateResult) -> str:
     return texts.ESTIMATE_RANGE.format(
         min_price=texts.format_price(estimate.min_price, estimate.currency),
         max_price=texts.format_price(estimate.max_price, estimate.currency),

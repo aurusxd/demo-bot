@@ -99,6 +99,23 @@ async def test_ready_without_required_slots_is_not_qualified(session: AsyncSessi
     assert result.qualified is False
 
 
+async def test_estimate_due_on_price_input_change_or_price_question(
+    session: AsyncSession,
+) -> None:
+    user = await make_user(session)
+    llm = FakeLLMClient(
+        llm_json("Город?", city="Казань"),
+        llm_json("Размеры?", furniture_type="kitchen"),
+        llm_json("Размеры?", furniture_type="kitchen"),  # same value: nothing changed
+        llm_json("Посчитаю", price_asked=True),
+    )
+    service = make_service(session, llm)
+
+    results = [await service.handle_message(user, text) for text in ("а", "б", "в", "г")]
+
+    assert [r.estimate_due for r in results] == [False, True, False, True]
+
+
 async def test_null_slots_do_not_erase_known_values(session: AsyncSession) -> None:
     user = await make_user(session)
     llm = FakeLLMClient(llm_json("Ок", city="Казань"), llm_json("Ок", city=None, budget="300 тыс"))
@@ -221,6 +238,7 @@ async def test_assistant_history_is_sent_as_json(session: AsyncSession) -> None:
     assert len(assistant) == 1
     assert assistant[0]["reply"] == "Размеры?"
     assert assistant[0]["ready"] is False
+    assert assistant[0]["price_asked"] is False
     assert set(assistant[0]["slots"]) == set(SLOT_FIELDS)
     assert all(v is None for v in assistant[0]["slots"].values())
 

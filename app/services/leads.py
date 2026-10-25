@@ -13,10 +13,7 @@ from app.db.models import Lead, LeadStatus, MediaKind
 from app.db.repositories import LeadMediaRepository, LeadRepository, UnitOfWork, UserRepository
 from app.schemas.estimate import EstimateResult
 from app.schemas.lead import LeadEvent, LeadPayload
-from app.services.estimate import EstimateService
-
-# Slots the price depends on: a change after delivery recomputes the estimate.
-ESTIMATE_INPUTS = frozenset({"furniture_type", "length_m", "price_class"})
+from app.services.estimate import ESTIMATE_INPUTS, EstimateService
 
 
 class LeadService:
@@ -96,11 +93,11 @@ class LeadService:
         with logger.contextualize(lead_id=lead.id):
             if lead.manager_notified_at is None or not (changed_slots or photo_file_id):
                 return
-            estimate_changed = False
-            if ESTIMATE_INPUTS.intersection(changed_slots):
-                before = (lead.estimate_min, lead.estimate_max)
+            # The dialog turn may have stored the new estimate already, so a price input
+            # change (not a before/after diff) decides whether the card shows the range.
+            estimate_changed = bool(ESTIMATE_INPUTS.intersection(changed_slots))
+            if estimate_changed:
                 self._apply_estimate(lead)
-                estimate_changed = before != (lead.estimate_min, lead.estimate_max)
                 await self._leads.save(lead)
             payload = await self._payload(lead, LeadEvent.UPDATED)
             await self._uow.commit()

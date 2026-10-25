@@ -99,3 +99,5 @@ class LLMReply(BaseModel):
     ready: bool = False
     # Catalog category to show the client after the reply; None -> no catalog card.
     catalog: Annotated[CatalogCategory | None, _lenient_enum(CatalogCategory)] = None
+    # The client asked about the price: the code shows the estimate, the LLM never names it.
+    price_asked: bool = False

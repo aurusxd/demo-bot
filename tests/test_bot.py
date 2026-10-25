@@ -138,6 +138,85 @@ async def test_qualification_dialog_through_dispatcher(
         assert lead.sent_at is not None
 
 
+def range_text(min_price: int, max_price: int) -> str:
+    return texts.ESTIMATE_RANGE.format(
+        min_price=texts.format_price(min_price, "₽"), max_price=texts.format_price(max_price, "₽")
+    )
+
+
+async def test_estimate_is_shown_once_type_and_length_are_known(
+    session_factory: async_sessionmaker[AsyncSession], sent: list[TelegramMethod[Any]]
+) -> None:
+    llm = FakeLLMClient(
+        llm_json("Какие размеры?", furniture_type="kitchen"),
+        llm_json("Какой стиль?", dimensions="3 м", length_m=3),
+        llm_json("Ваш телефон?", price_class="premium"),
+        llm_json("Спасибо!", ready=True, phone="89123451234"),
+    )
+    dp = make_dispatcher(session_factory, llm)
+    bot = Bot(token=BOT_TOKEN)
+
+    await dp.feed_update(bot, text_update(1, "Хочу кухню"))
+    await dp.feed_update(bot, text_update(2, "3 метра"))
+    await dp.feed_update(bot, text_update(3, "Массив"))
+    await dp.feed_update(bot, text_update(4, "89123451234"))
+
+    # No phone needed for the range; a class change recomputes it; no repeat on qualification.
+    assert sent_texts(sent) == [
+        "Какие размеры?",
+        "Какой стиль?",
+        range_text(115000, 155000),
+        "Ваш телефон?",
+        range_text(161000, 217000),
+        "Спасибо!",
+    ]
+
+
+async def test_price_question_gets_the_estimate(
+    session_factory: async_sessionmaker[AsyncSession], sent: list[TelegramMethod[Any]]
+) -> None:
+    llm = FakeLLMClient(
+        llm_json("Какие размеры?", price_asked=True, furniture_type="kitchen"),
+        llm_json("Стиль?", dimensions="3 м", length_m=3),
+        llm_json("Это предварительный расчёт", price_asked=True),
+    )
+    dp = make_dispatcher(session_factory, llm)
+    bot = Bot(token=BOT_TOKEN)
+
+    await dp.feed_update(bot, text_update(1, "Сколько стоит кухня?"))
+    await dp.feed_update(bot, text_update(2, "3 метра"))
+    await dp.feed_update(bot, text_update(3, "А сколько стоит?"))
+
+    estimate = range_text(115000, 155000)
+    # Asked without a length: the LLM asks for it, the code sends no range yet.
+    assert sent_texts(sent) == [
+        "Какие размеры?",
+        "Стиль?",
+        estimate,
+        "Это предварительный расчёт",
+        estimate,
+    ]
+
+
+async def test_qualified_without_length_gets_after_measure_text(
+    session_factory: async_sessionmaker[AsyncSession], sent: list[TelegramMethod[Any]]
+) -> None:
+    llm = FakeLLMClient(
+        llm_json(
+            "Спасибо!",
+            ready=True,
+            furniture_type="wardrobe",
+            dimensions="не знаю",
+            phone="89123451234",
+        )
+    )
+    dp = make_dispatcher(session_factory, llm)
+
+    await dp.feed_update(Bot(token=BOT_TOKEN), text_update(1, "Шкаф, 89123451234"))
+
+    assert sent_texts(sent) == ["Спасибо!", texts.ESTIMATE_AFTER_MEASURE]
+
+
 async def test_llm_failure_answers_fallback(
     session_factory: async_sessionmaker[AsyncSession], sent: list[TelegramMethod[Any]]
 ) -> None:

@@ -134,8 +134,11 @@ def sent_texts(sent: list[TelegramMethod[Any]]) -> list[str]:
     return [m.text for m in sent if isinstance(m, SendMessage)]
 
 
-def llm_json(reply: str = "Ок", ready: bool = False, **slots: object) -> str:
-    return json.dumps({"reply": reply, "slots": slots, "ready": ready}, ensure_ascii=False)
+def llm_json(
+    reply: str = "Ок", ready: bool = False, price_asked: bool = False, **slots: object
+) -> str:
+    payload = {"reply": reply, "slots": slots, "ready": ready, "price_asked": price_asked}
+    return json.dumps(payload, ensure_ascii=False)
 
 
 class FakeLLMClient:
