@@ -35,6 +35,16 @@ def utf16_len(text: str) -> int:
     return len(text.encode("utf-16-le")) // 2
 
 
+def range_text(min_price: int, max_price: int) -> str:
+    return texts.ESTIMATE_RANGE.format(
+        min_price=texts.format_price(min_price, "₽"), max_price=texts.format_price(max_price, "₽")
+    )
+
+
+def with_note(reply: str, note: str) -> str:
+    return f"{reply}\n\n{note}"
+
+
 def test_profile_texts_fit_telegram_limits() -> None:
     assert 0 < utf16_len(texts.BOT_DESCRIPTION) <= TELEGRAM_DESCRIPTION_LIMIT
     assert 0 < utf16_len(texts.BOT_SHORT_DESCRIPTION) <= TELEGRAM_SHORT_DESCRIPTION_LIMIT
@@ -113,19 +123,15 @@ async def test_qualification_dialog_through_dispatcher(
     await dp.feed_update(bot, text_update(4, "3 метра прямая, 89123451234"))
 
     replies = sent_texts(sent)
-    estimate = texts.ESTIMATE_RANGE.format(
-        min_price=texts.format_price(115000, "₽"), max_price=texts.format_price(155000, "₽")
-    )
-    # No robotic summary: the LLM recaps itself, then only the estimate follows.
+    # No robotic summary: the LLM recaps itself, the estimate goes in the same message.
     assert replies == [
         texts.GREETING,
         "Приятно познакомиться, Анна! Что хотите заказать?",
         "Какие размеры кухни?",
-        "Спасибо!",
-        estimate,
+        with_note("Спасибо!", range_text(115000, 155000)),
     ]
     llm_replies = [m for m in sent if isinstance(m, SendMessage) and m.text != texts.GREETING]
-    assert all(m.parse_mode is None for m in llm_replies[:-1])
+    assert all(m.parse_mode is None for m in llm_replies)
     assert all(m.reply_markup is None for m in llm_replies)  # no buttons in the dialog
     # The greeting is part of the history sent to the LLM.
     assert json.loads(llm.calls[0][2].content)["reply"] == texts.GREETING
@@ -136,12 +142,6 @@ async def test_qualification_dialog_through_dispatcher(
         assert lead.status is LeadStatus.SENT
         assert (lead.estimate_min, lead.estimate_max) == (115000, 155000)
         assert lead.sent_at is not None
-
-
-def range_text(min_price: int, max_price: int) -> str:
-    return texts.ESTIMATE_RANGE.format(
-        min_price=texts.format_price(min_price, "₽"), max_price=texts.format_price(max_price, "₽")
-    )
 
 
 async def test_estimate_is_shown_once_type_and_length_are_known(
@@ -164,10 +164,8 @@ async def test_estimate_is_shown_once_type_and_length_are_known(
     # No phone needed for the range; a class change recomputes it; no repeat on qualification.
     assert sent_texts(sent) == [
         "Какие размеры?",
-        "Какой стиль?",
-        range_text(115000, 155000),
-        "Ваш телефон?",
-        range_text(161000, 217000),
+        with_note("Какой стиль?", range_text(115000, 155000)),
+        with_note("Ваш телефон?", range_text(161000, 217000)),
         "Спасибо!",
     ]
 
@@ -191,10 +189,8 @@ async def test_price_question_gets_the_estimate(
     # Asked without a length: the LLM asks for it, the code sends no range yet.
     assert sent_texts(sent) == [
         "Какие размеры?",
-        "Стиль?",
-        estimate,
-        "Это предварительный расчёт",
-        estimate,
+        with_note("Стиль?", estimate),
+        with_note("Это предварительный расчёт", estimate),
     ]
 
 
@@ -214,7 +210,7 @@ async def test_qualified_without_length_gets_after_measure_text(
 
     await dp.feed_update(Bot(token=BOT_TOKEN), text_update(1, "Шкаф, 89123451234"))
 
-    assert sent_texts(sent) == ["Спасибо!", texts.ESTIMATE_AFTER_MEASURE]
+    assert sent_texts(sent) == [with_note("Спасибо!", texts.ESTIMATE_AFTER_MEASURE)]
 
 
 async def test_llm_failure_answers_fallback(

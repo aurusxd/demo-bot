@@ -34,9 +34,10 @@ async def run_dialog_turn(
 
     # LLM output is plain text: never parse it as HTML. On qualification the LLM itself
     # thanks the client and recaps the order, so no robotic summary is sent here.
-    await message.answer(result.reply or texts.QUALIFY_FALLBACK, parse_mode=None)
-    if result.lead_id is not None and (result.estimate_due or result.qualified):
-        await _send_estimate(message, leads, result.lead_id, result)
+    # The estimate goes in the same message: a second bubble right after looks like a glitch.
+    reply = result.reply or texts.QUALIFY_FALLBACK
+    note = await _estimate_note(leads, result)
+    await message.answer(reply if note is None else f"{reply}\n\n{note}", parse_mode=None)
     if result.catalog is not None:
         # Never raises: a failed card must not cost the lead its delivery below.
         await show_catalog(message, catalog, result.catalog)
@@ -59,15 +60,16 @@ async def dialog_message(
     await run_dialog_turn(message, user, qualification, leads, catalog, message.text or "")
 
 
-async def _send_estimate(
-    message: Message, leads: LeadService, lead_id: int, result: TurnResult
-) -> None:
+async def _estimate_note(leads: LeadService, result: TurnResult) -> str | None:
     """The range as soon as it is computable; a known range is not repeated on qualification."""
-    estimate = await leads.estimate(lead_id)
+    if result.lead_id is None or not (result.estimate_due or result.qualified):
+        return None
+    estimate = await leads.estimate(result.lead_id)
     if estimate is not None and result.estimate_due:
-        await message.answer(_estimate_text(estimate))
-    elif estimate is None and result.qualified:
-        await message.answer(texts.ESTIMATE_AFTER_MEASURE)
+        return _estimate_text(estimate)
+    if estimate is None and result.qualified:
+        return texts.ESTIMATE_AFTER_MEASURE
+    return None
 
 
 def _estimate_text(estimate: EstimateResult) -> str:
