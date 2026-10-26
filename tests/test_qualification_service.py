@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bot import texts
 from app.clients.base import LLMClient
 from app.core.errors import ExternalServiceError, InvalidInputError
 from app.db.models import (
@@ -94,6 +95,29 @@ async def test_lead_qualified_when_ready_and_required_slots_filled(session: Asyn
     assert result.slots["phone"] == "+79123451234"
     lead = (await session.scalars(select(Lead))).one()
     assert lead.status is LeadStatus.QUALIFIED
+
+
+async def test_ready_with_invalid_phone_asks_for_it_instead_of_thanking(
+    session: AsyncSession,
+) -> None:
+    user = await make_user(session)
+    llm = FakeLLMClient(
+        llm_json(
+            "Спасибо! Заявку передал менеджеру",
+            ready=True,
+            furniture_type="kitchen",
+            dimensions="3 м",
+            phone="+7999999",  # 7 digits: rejected by the code
+        )
+    )
+    service = make_service(session, llm)
+
+    result = await service.handle_message(user, "Кухня 3 м, +7999999")
+
+    assert result.qualified is False
+    assert result.reply == texts.PHONE_NEEDED
+    stored = [m.content for m in await get_messages(session) if m.role is MessageRole.ASSISTANT]
+    assert stored == [texts.PHONE_NEEDED]  # the LLM sees what the client actually saw
 
 
 async def test_ready_without_required_slots_is_not_qualified(session: AsyncSession) -> None:

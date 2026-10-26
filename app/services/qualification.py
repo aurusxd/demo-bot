@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from loguru import logger
 from pydantic import ValidationError
 
+from app.bot import texts
 from app.clients.base import ChatMessage, LLMClient
 from app.core.errors import ExternalServiceError, InvalidInputError
 from app.db.models import (
@@ -115,7 +116,13 @@ class QualificationService:
                 return TurnResult(reply=None, lead_id=lead.id, slots=_lead_slots(lead))
 
             updated = await self._apply_slots(lead, reply)
-            await self._save_message(lead, MessageRole.ASSISTANT, reply.reply)
+            text_out = reply.reply
+            if lead.status is LeadStatus.DRAFT and reply.ready and lead.phone is None:
+                # The LLM thanks for a phone the code rejected (e.g. "+7999999"): saying
+                # "передал менеджеру" would be a lie, so the code asks for the number again.
+                logger.info("llm ready but no valid phone, asking for it again")
+                text_out = texts.PHONE_NEEDED
+            await self._save_message(lead, MessageRole.ASSISTANT, text_out)
             qualified = lead.status is LeadStatus.DRAFT and reply.ready and _required_filled(lead)
             if qualified:
                 await self._set_status(lead, LeadStatus.QUALIFIED)
@@ -132,7 +139,7 @@ class QualificationService:
                 estimate_due,
             )
             return TurnResult(
-                reply=reply.reply,
+                reply=text_out,
                 lead_id=lead.id,
                 qualified=qualified,
                 changed_slots=tuple(updated),

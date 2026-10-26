@@ -38,6 +38,12 @@ GREETING = (
 
 QUALIFY_FALLBACK = "Извините, не совсем понял вас 🙏 Можете сформулировать чуть иначе?"
 
+# The LLM considered the order complete, but the phone is missing or invalid (too few digits).
+PHONE_NEEDED = (
+    "📞 Чтобы передать заявку менеджеру, нужен номер полностью — 11 цифр, "
+    "например +7 999 123-45-67. Это демо, так что можно указать любой."
+)
+
 TEXT_TOO_LONG = "✂️ Сообщение получилось слишком длинным. Сократите, пожалуйста, до 1000 символов."
 
 DELETE_ME_DONE = (
