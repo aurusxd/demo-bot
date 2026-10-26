@@ -28,6 +28,7 @@ from app.db.repositories import (
 from app.prompts.qualification import (
     ESTIMATE_SHOWN_TEMPLATE,
     INVALID_JSON_HINT,
+    NAME_ALREADY_ASKED,
     PHOTO_MARKER,
     SYSTEM_PROMPT,
 )
@@ -134,6 +135,24 @@ async def test_shown_estimate_is_in_llm_context(session: AsyncSession) -> None:
 
     context = llm.calls[1][1].content
     assert ESTIMATE_SHOWN_TEMPLATE.format(min_price=115000, max_price=155000) in context
+
+
+async def test_name_is_not_asked_again_after_the_first_reply(session: AsyncSession) -> None:
+    user = await make_user(session)
+    llm = FakeLLMClient(
+        llm_json("Как вас зовут? Какие размеры?"),
+        llm_json("Стиль?"),
+        llm_json("Анна, телефон?", name="Анна"),
+        llm_json("Спасибо"),
+    )
+    service = make_service(session, llm)
+
+    for text in ("кухня", "3 метра", "Анна", "+79123451234"):
+        await service.handle_message(user, text)
+
+    contexts = [call[1].content for call in llm.calls]
+    # First reply may ask the name; later ones get the stop until the name is known.
+    assert [NAME_ALREADY_ASKED in c for c in contexts] == [False, True, True, False]
 
 
 async def test_null_slots_do_not_erase_known_values(session: AsyncSession) -> None:

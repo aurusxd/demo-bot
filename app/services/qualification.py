@@ -23,6 +23,7 @@ from app.prompts.qualification import (
     CURRENT_SLOTS_TEMPLATE,
     ESTIMATE_SHOWN_TEMPLATE,
     INVALID_JSON_HINT,
+    NAME_ALREADY_ASKED,
     PHOTO_MARKER,
     SYSTEM_PROMPT,
 )
@@ -174,7 +175,7 @@ class QualificationService:
     async def _ask_llm(self, lead: Lead, history: list[Message]) -> LLMReply | None:
         prompt = [
             ChatMessage("system", SYSTEM_PROMPT),
-            ChatMessage("system", _lead_context(lead)),
+            ChatMessage("system", _lead_context(lead, history)),
             *(_to_chat_message(m) for m in history),
         ]
         try:
@@ -252,13 +253,25 @@ def _lead_slots(lead: Lead) -> dict[str, str]:
     return slots
 
 
-def _lead_context(lead: Lead) -> str:
-    """Known slots plus the range the client has already seen (the bot shows it once stored)."""
-    context = CURRENT_SLOTS_TEMPLATE.format(slots=json.dumps(_lead_slots(lead), ensure_ascii=False))
-    if lead.estimate_min is None or lead.estimate_max is None:
-        return context
-    shown = ESTIMATE_SHOWN_TEMPLATE.format(min_price=lead.estimate_min, max_price=lead.estimate_max)
-    return f"{context}\n{shown}"
+def _lead_context(lead: Lead, history: list[Message]) -> str:
+    """Known slots, the range the client has already seen (the bot shows it once stored)
+    and a stop on asking the name again."""
+    lines = [CURRENT_SLOTS_TEMPLATE.format(slots=json.dumps(_lead_slots(lead), ensure_ascii=False))]
+    if lead.estimate_min is not None and lead.estimate_max is not None:
+        lines.append(
+            ESTIMATE_SHOWN_TEMPLATE.format(min_price=lead.estimate_min, max_price=lead.estimate_max)
+        )
+    if lead.name is None and _llm_answered_before(history):
+        lines.append(NAME_ALREADY_ASKED)
+    return "\n".join(lines)
+
+
+def _llm_answered_before(history: list[Message]) -> bool:
+    """More than one client turn (text or voice) means the LLM has replied at least once."""
+    turns = sum(
+        1 for m in history if m.role is MessageRole.USER and m.kind is not MessageKind.PHOTO
+    )
+    return turns > 1
 
 
 def _required_filled(lead: Lead) -> bool:
