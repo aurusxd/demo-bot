@@ -45,6 +45,11 @@ def with_note(reply: str, note: str) -> str:
     return f"{reply}\n\n{note}"
 
 
+def is_card_preview(text: str | None) -> bool:
+    header = texts.LEAD_CARD_PREVIEW.split("{card}")[0]
+    return text is not None and text.startswith(header)
+
+
 def test_profile_texts_fit_telegram_limits() -> None:
     assert 0 < utf16_len(texts.BOT_DESCRIPTION) <= TELEGRAM_DESCRIPTION_LIMIT
     assert 0 < utf16_len(texts.BOT_SHORT_DESCRIPTION) <= TELEGRAM_SHORT_DESCRIPTION_LIMIT
@@ -124,19 +129,28 @@ async def test_qualification_dialog_through_dispatcher(
 
     replies = sent_texts(sent)
     # No robotic summary: the LLM recaps itself, the estimate goes in the same message.
-    assert replies == [
+    assert replies[:-1] == [
         texts.GREETING,
         "Приятно познакомиться, Анна! Что хотите заказать?",
         "Какие размеры кухни?",
         with_note("Спасибо!", range_text(115000, 155000)),
     ]
-    llm_replies = [m for m in sent if isinstance(m, SendMessage) and m.text != texts.GREETING]
+    # Then the visitor sees the very card the manager got (HTML, values escaped).
+    assert len(notifier.cards) == 1
+    assert replies[-1] == texts.LEAD_CARD_PREVIEW.format(card=notifier.cards[0][0])
+    assert "+79123451234" in replies[-1]
+    preview = [m for m in sent if isinstance(m, SendMessage) and is_card_preview(m.text)]
+    assert [m.parse_mode for m in preview] == ["HTML"]
+    llm_replies = [
+        m
+        for m in sent
+        if isinstance(m, SendMessage) and m.text != texts.GREETING and not is_card_preview(m.text)
+    ]
     assert all(m.parse_mode is None for m in llm_replies)
     assert all(m.reply_markup is None for m in llm_replies)  # no buttons in the dialog
     # The greeting is part of the history sent to the LLM.
     assert json.loads(llm.calls[0][2].content)["reply"] == texts.GREETING
     assert [lead.phone for lead in crm.sent] == ["+79123451234"]
-    assert len(notifier.cards) == 1
     async with session_factory() as session:
         lead = (await session.scalars(select(Lead))).one()
         assert lead.status is LeadStatus.SENT
@@ -162,12 +176,14 @@ async def test_estimate_is_shown_once_type_and_length_are_known(
     await dp.feed_update(bot, text_update(4, "89123451234"))
 
     # No phone needed for the range; a class change recomputes it; no repeat on qualification.
-    assert sent_texts(sent) == [
+    replies = sent_texts(sent)
+    assert replies[:-1] == [
         "Какие размеры?",
         with_note("Какой стиль?", range_text(115000, 155000)),
         with_note("Ваш телефон?", range_text(161000, 217000)),
         "Спасибо!",
     ]
+    assert is_card_preview(replies[-1])
 
 
 async def test_price_question_gets_the_estimate(
@@ -210,7 +226,10 @@ async def test_qualified_without_length_gets_after_measure_text(
 
     await dp.feed_update(Bot(token=BOT_TOKEN), text_update(1, "Шкаф, 89123451234"))
 
-    assert sent_texts(sent) == [with_note("Спасибо!", texts.ESTIMATE_AFTER_MEASURE)]
+    replies = sent_texts(sent)
+    assert replies[0] == with_note("Спасибо!", texts.ESTIMATE_AFTER_MEASURE)
+    assert len(replies) == 2 and is_card_preview(replies[1])
+    assert texts.LEAD_CARD_NO_ESTIMATE in replies[1]
 
 
 async def test_llm_failure_answers_fallback(

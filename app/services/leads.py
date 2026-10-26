@@ -82,6 +82,14 @@ class LeadService:
             await self._uow.commit()
             return lead.status is LeadStatus.SENT
 
+    async def card(self, lead_id: int) -> str:
+        """The managers' card for this lead: the demo shows the visitor what managers got."""
+        lead = await self._get(lead_id)
+        with logger.contextualize(lead_id=lead.id):
+            card = render_lead_card(await self._payload(lead, LeadEvent.CREATED))
+            logger.info("lead card rendered for the visitor lead_id={}", lead.id)
+            return card
+
     async def send_update(
         self,
         lead_id: int,

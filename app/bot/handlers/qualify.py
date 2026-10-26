@@ -1,4 +1,5 @@
 from aiogram import F, Router
+from aiogram.enums import ParseMode
 from aiogram.types import Message
 from aiogram.utils.chat_action import ChatActionSender
 
@@ -46,6 +47,9 @@ async def run_dialog_turn(
     # Slow CRM/manager delivery goes last: the client already has every answer.
     if result.qualified:
         await leads.submit(result.lead_id)
+        # The demo's point for a furniture business: the warm lead its manager gets.
+        card = await leads.card(result.lead_id)
+        await message.answer(texts.LEAD_CARD_PREVIEW.format(card=card), parse_mode=ParseMode.HTML)
     elif result.changed_slots:
         await leads.send_update(result.lead_id, result.changed_slots)
 

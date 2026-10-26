@@ -421,6 +421,10 @@ async def test_failed_card_does_not_block_lead_delivery(
         min_price=texts.format_price(115000, "₽"), max_price=texts.format_price(155000, "₽")
     )
     # Thank-you with the estimate, then the card (failed here); never the generic error.
-    assert replies == [f"Спасибо! Вот примеры\n\n{estimate}", texts.CATALOG_FAILED]
+    assert replies == [
+        f"Спасибо! Вот примеры\n\n{estimate}",
+        texts.CATALOG_FAILED,
+        texts.LEAD_CARD_PREVIEW.format(card=notifier.cards[0][0]),
+    ]
     assert len(crm.sent) == 1
     assert len(notifier.cards) == 1

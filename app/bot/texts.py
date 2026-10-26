@@ -132,11 +132,17 @@ LEAD_CARD_TITLE = "🔥 <b>Новая заявка #{lead_id}</b>"
 LEAD_CARD_ESTIMATE = "💰 <b>Предварительно:</b> {min_price} – {max_price}"
 LEAD_CARD_NO_ESTIMATE = "💰 <b>Расчёт:</b> после замера"
 LEAD_CARD_CONTACT = "✈️ <b>Telegram:</b> {contact}"
-LEAD_CARD_PHOTOS = "📎 <b>Фото:</b> {count} (ниже)"
+LEAD_CARD_PHOTOS = "📎 <b>Фото:</b> {count}"
 LEAD_CARD_FIELD = "<b>{label}:</b> {value}"
 LEAD_UPDATE_TITLE = "✏️ <b>Дополнение к заявке #{lead_id}</b>"
 LEAD_UPDATE_PHOTO = "📎 <b>Дополнение к заявке #{lead_id}:</b> фото"
 LEAD_CARD_B2B_TITLE = "\n🏢 <i>О посетителе демо</i>"
+# Sent to the visitor right after qualification: the demo shows what the manager got.
+LEAD_CARD_PREVIEW = (
+    "👀 Так выглядит заявка, которую только что получил менеджер (она же ушла в CRM):\n\n"
+    "{card}\n\n"
+    "Менеджер звонит уже «тёплому» клиенту — без анкет и повторных вопросов."
+)
 
 # Order and labels of the card fields.
 LEAD_CARD_FIELDS = (

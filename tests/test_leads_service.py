@@ -79,6 +79,18 @@ async def test_submit_sends_to_crm_and_managers_with_photos(session: AsyncSessio
     assert "Фото:</b> 2" in card
 
 
+async def test_visitor_card_matches_the_managers_card(session: AsyncSession) -> None:
+    _, lead = await make_lead(session)
+    await add_photo(session, lead, "p1")
+    notifier = FakeNotifier()
+    service = make_service(session, notifier=notifier)
+    await service.submit(lead.id)
+
+    # Demo: the visitor sees exactly what the manager got; nothing else is sent.
+    assert await service.card(lead.id) == notifier.cards[0][0]
+    assert len(notifier.cards) == 1
+
+
 async def test_card_escapes_user_values(session: AsyncSession) -> None:
     _, lead = await make_lead(session, name="<script>Анна</script>", length_m=None)
     notifier = FakeNotifier()
