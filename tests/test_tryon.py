@@ -123,7 +123,8 @@ async def test_generate_records_request_and_counts_usage(
     assert room == ROOM
     with Image.open(io.BytesIO(reference)) as image:
         assert image.format == "JPEG"  # the catalog photo is normalized too
-    assert "Белая кухня" in prompt and "furniture" in prompt
+    assert "Белая кухня (Модерн)" in prompt and "furniture" in prompt
+    assert "Do NOT add anything that is not in the first image" in prompt
     (request,) = await get_requests(session)
     assert request.status is TryOnStatus.DONE
     assert request.latency_ms is not None and request.error is None
@@ -136,7 +137,9 @@ async def test_interior_uses_restyle_prompt(session: AsyncSession, tmp_path: Pat
 
     await make_service(session, image_gen, tmp_path).generate(await make_user(session), 2, ROOM)
 
-    assert "Redesign the room" in image_gen.calls[0][2]
+    prompt = image_gen.calls[0][2]
+    assert "Furnish the room" in prompt
+    assert "Do NOT add anything that is not in the first image" in prompt
 
 
 async def test_daily_limit_blocks_and_resets_next_day(

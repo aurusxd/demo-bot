@@ -119,7 +119,7 @@ class TryOnService:
     async def _render(self, item: CatalogItem, room_photo: bytes) -> bytes:
         reference = await asyncio.to_thread(_read_reference, self._images_dir / item.image_path)
         return await self._image_gen.edit(
-            room_photo, reference, tryon_prompt(item.category, item.title)
+            room_photo, reference, tryon_prompt(item.category, item.title, item.style)
         )
 
     async def _start(self, user: User, item: CatalogItem) -> TryOnRequest:
